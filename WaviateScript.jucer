@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="lhH6yq" name="WaviateScript" projectType="audioplug" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+  <MAINGROUP id="udIh3w" name="WaviateScript">
+    <GROUP id="{D71D81D4-16E3-C5D9-10D8-11872DD40E31}" name="Source">
+      <FILE id="pQYfCX" name="AlignedBlob.cpp" compile="1" resource="0" file="Source/AlignedBlob.cpp"/>
+      <FILE id="fRzBHH" name="AlignedBlob.h" compile="0" resource="0" file="Source/AlignedBlob.h"/>
+      <FILE id="yvUwGd" name="WaviateInput.h" compile="0" resource="0" file="Source/WaviateInput.h"/>
+      <FILE id="O4BrSy" name="WasmCompiler.cpp" compile="1" resource="0"
+            file="Source/WasmCompiler.cpp"/>
+      <FILE id="vTJPeL" name="WasmCompiler.h" compile="0" resource="0" file="Source/WasmCompiler.h"/>
+      <FILE id="rTu4JN" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
+      <FILE id="inA8oH" name="PluginProcessor.h" compile="0" resource="0"
+            file="Source/PluginProcessor.h"/>
+      <FILE id="KIG1xs" name="PluginEditor.cpp" compile="1" resource="0"
+            file="Source/PluginEditor.cpp"/>
+      <FILE id="KXaYAE" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
+  <EXPORTFORMATS>
+    <VS2022 targetFolder="Builds/VisualStudio2022">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="WaviateScript"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="WaviateScript"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../../../OneDrive/Documents/JuceInstalls/JUCE/modules"/>
+      </MODULEPATHS>
+    </VS2022>
+  </EXPORTFORMATS>
+</JUCERPROJECT>

@@ -1,0 +1,3 @@
+- [Home](home.md)
+- [Guide](guide.md)
+- [Rules](rules.md)
