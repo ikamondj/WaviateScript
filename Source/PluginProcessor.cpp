@@ -8,7 +8,6 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "AlignedBlob.h"
 
 //==============================================================================
 WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
@@ -306,6 +305,10 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     auto& mainOut = getBusBuffer(buffer, false, 0);
 
     bool sidechainEnabled = false;
+
+#ifdef WAV_SCRIPT_PREMIUM
+
+#endif
 
     if (getBusCount(true) > 1)
     {

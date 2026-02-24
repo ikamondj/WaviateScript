@@ -12,7 +12,8 @@
 #include "WaviateInput.h"
 
 #ifdef WAV_SCRIPT_PREMIUM
-#include "GameController.h"
+#include "WSPremium/GameControllerInterface.h"
+#include "WSPremium/GameControllerInputEvent.h"
 #endif
 
 typedef float (*SampleWiseProcessor)(const WaviateSampleInput*, void* state);
