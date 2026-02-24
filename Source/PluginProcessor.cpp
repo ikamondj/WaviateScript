@@ -23,7 +23,7 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
                        )
 #endif
 {
-    wavInput = std::make_unique<WavInput>();
+    wavInput = std::make_unique<WaviateSampleInput>();
 }
 
 WaviateScriptAudioProcessor::~WaviateScriptAudioProcessor()
@@ -146,15 +146,15 @@ bool WaviateScriptAudioProcessor::isBusesLayoutSupported (const BusesLayout& lay
 std::array<bool, 128> sustainDeferredNoteOff{}; // notes released while sustain is down
 bool sustainDown = false;
 
-static inline void clearAllNotes(bool midiNote[128], std::array<bool,128>& deferred)
+static inline void clearAllNotes(uint8_t* midiNote, std::array<bool,128>& deferred)
 {
     std::memset(midiNote, 0, 128 * sizeof(bool));
     deferred.fill(false);
 }
 
 static inline void applyMidiToState(const juce::MidiMessage& m,
-                                   bool midiNote[128],
-                                   float midiCC[128],
+                                   uint8_t* midiNote,
+                                   uint8_t* midiCC,
                                    bool& sustainDown,
                                    std::array<bool,128>& sustainDeferredNoteOff)
 {
@@ -163,7 +163,7 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
         const int note = m.getNoteNumber();
         if (note >= 0 && note < 128)
         {
-            midiNote[note] = true;
+            midiNote[note] = 1;
             sustainDeferredNoteOff[note] = false;
         }
         return;
@@ -202,8 +202,7 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
         const int cc = m.getControllerNumber();
         const int v  = m.getControllerValue();
 
-        if (cc >= 0 && cc < 128)
-            midiCC[cc] = static_cast<float>(v) / 127.0f;
+        midiCC[cc] = static_cast<uint8_t>(v);
 
         // Sustain pedal (CC 64): standard threshold is >= 64 = down
         if (cc == 64)
@@ -226,7 +225,7 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
             sustainDown = newSustainDown;
         }
 
-        // Common ìAll Notes Offî is also sometimes sent as CC 123
+        // Common ‚ÄúAll Notes Off‚Äù is also sometimes sent as CC 123
         if (cc == 123 || cc == 120)
         {
             clearAllNotes(midiNote, sustainDeferredNoteOff);
@@ -247,21 +246,24 @@ void WaviateScriptAudioProcessor::processSegment(juce::AudioBuffer<float>& mainO
                                                  int numOutputCh)
 {
     // Point WavInput at the *whole-block* arrays (pointers stable); DSP should use startSample offset.
-    wavInput->inputSamples = mainIn.getArrayOfReadPointers();
-    wavInput->outputSamples = mainOut.getArrayOfReadPointers();
-    wavInput->numSamples   = numSamplesInSegment; // segment size, not whole block
-    wavInput->numInputChannels  = numInputCh;
-    wavInput->numOutputChannels = numOutputCh;
+    wavInput->inputDeviceSamples = mainIn.getArrayOfReadPointers();
+    wavInput->currentSampleData = mainOut.getArrayOfWritePointers();
+    wavInput->midiSegmentSize   = numSamplesInSegment; // segment size, not whole block
+    wavInput->inputChannelCount  = numInputCh;
+    wavInput->outputChannelCount = numOutputCh;
 
     if (sideIn != nullptr && sideIn->getNumChannels() > 0)
     {
-        wavInput->sideChainSamples    = sideIn->getReadPointer(0, startSample); // mono sidechain view
-        wavInput->numSideChainSamples = numSamplesInSegment;
+        for (int c = 0; c < sideIn->getNumChannels(); c += 1) {
+            wavInput->inputSideChainSamples = sideIn->getArrayOfReadPointers();
+        }
+        
+        wavInput->sideChainChannelCount = sideIn->getNumChannels();
     }
     else
     {
-        wavInput->sideChainSamples    = nullptr;
-        wavInput->numSideChainSamples = 0;
+        wavInput->inputSideChainSamples    = nullptr;
+        wavInput->sideChainChannelCount = 0;
     }
 
     // Ensure outputs beyond inputs are cleared for this segment
@@ -271,7 +273,7 @@ void WaviateScriptAudioProcessor::processSegment(juce::AudioBuffer<float>& mainO
     // ----- SampleWise Processing (segment) -----
     for (int ch = 0; ch < numInputCh; ++ch)
     {
-        wavInput->currentOutputChannel = ch;
+        wavInput->outputChannel = ch;
 
         const float* in  = mainIn.getReadPointer(ch, startSample);
         float* out       = mainOut.getWritePointer(ch, startSample);
@@ -303,7 +305,13 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     auto& mainIn  = getBusBuffer(buffer, true,  0);
     auto& mainOut = getBusBuffer(buffer, false, 0);
 
-    const bool sidechainEnabled = (getBusCount(true) > 1) && (getBuses(true)[1] != nullptr);
+    bool sidechainEnabled = false;
+
+    if (getBusCount(true) > 1)
+    {
+        if (auto* bus = getBus(true, 1))
+            sidechainEnabled = bus->isEnabled();
+    }
     juce::AudioBuffer<float>* sideInPtr = nullptr;
     juce::AudioBuffer<float> sideInDummy;
 
@@ -346,8 +354,8 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         {
             const juce::MidiMessage msg((*it).getMessage());
             applyMidiToState(msg,
-                             wavInput->midiNote,
-                             wavInput->midiControllersCC,
+                             wavInput->midiNoteOn,
+                             wavInput->midiCCValue,
                              sustainDown,
                              sustainDeferredNoteOff);
             ++it;

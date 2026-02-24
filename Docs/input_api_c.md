@@ -10,17 +10,27 @@ struct WaviateSampleInput {
     int32_t sideChainChannelCount;
     int32_t sampleMemoryCount;
     int32_t outputChannelCount;
-    uint8_t outputChannel; //0..outputChannelCount-1
-    uint8_t* midiNoteOn;   // 0 or 1. length = 128
-    uint8_t* midiCCValue;  // 0..127. length = 128
-    uint64_t* sampleWhenMidiNoteOn; // length = 128
-    uint64_t* sampleWhenMidiNoteOff; // length = 128
-    uint64_t* sampleWhenCCValueChanged; // length = 128
-    float sampleRate; //in hz
-    float** previousSamples; //length = outputChannelCount X sampleMemoryCount
-    float** inputDeviceSamples; //length = inputChannelCount X blockSize
-    float** inputSideChainSamples; //length = sideChainChannelCount X blockSize
-    float** currentSampleData; //length = outputChannelCount X blockSize
+    uint8_t outputChannel;
+
+    uint8_t* midiNoteOn;
+    uint8_t* midiCCValue;
+    uint64_t* sampleWhenMidiNoteOn;
+    uint64_t* sampleWhenMidiNoteOff;
+    uint64_t* sampleWhenCCValueChanged;
+
+    int32_t controllerCount;
+    uint64_t* controllerButtonMask;
+    uint64_t* sampleWhenControllerButtonChanged;
+    int32_t controllerButtonCount;
+    float* controllerAxisValue;
+    uint64_t* sampleWhenControllerAxisChanged;
+    int32_t controllerAxisCount;
+
+    float sampleRate;
+    float** previousSamples;
+    float** inputDeviceSamples;
+    float** inputSideChainSamples;
+    float** currentSampleData;
 };
 ```
 

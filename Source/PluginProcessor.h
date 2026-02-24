@@ -11,7 +11,11 @@
 #include <JuceHeader.h>
 #include "WaviateInput.h"
 
-typedef float (*SampleWiseProcessor)(const WavInput*, void* state);
+#ifdef WAV_SCRIPT_PREMIUM
+#include "GameController.h"
+#endif
+
+typedef float (*SampleWiseProcessor)(const WaviateSampleInput*, void* state);
 
 //==============================================================================
 /**
@@ -63,8 +67,10 @@ public:
         int numSamplesInSegment,
         int numInputCh,
         int numOutputCh);
-    std::unique_ptr<WavInput> wavInput;
-    float 
+    std::unique_ptr<WaviateSampleInput> wavInput;
+#ifdef WAV_SCRIPT_PREMIUM
+    GameControllerInterface controller;
+#endif
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessor)
