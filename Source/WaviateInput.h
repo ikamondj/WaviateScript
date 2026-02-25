@@ -41,3 +41,15 @@ struct WaviateSampleInput {
     const float* const* inputSideChainSamples;
     float* const* currentSampleData;
 };
+
+struct WaviateSampleStateWriter {
+
+};
+
+struct WaviateFrequencyInput {
+
+};
+
+struct WaviateFrequencyStateWriter {
+
+};

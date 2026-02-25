@@ -10,6 +10,7 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "CodeEditor.h"
 
 //==============================================================================
 /**
@@ -28,7 +29,9 @@ private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
     WaviateScriptAudioProcessor& audioProcessor;
-    juce::WebBrowserComponent webBrowser;
+    std::unique_ptr<juce::CodeEditorComponent> codeEditor;
+    juce::CPlusPlusCodeTokeniser tokenizer;
+    juce::CodeDocument codeDoc;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessorEditor)
 };

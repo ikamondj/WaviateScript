@@ -4,6 +4,16 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="udIh3w" name="WaviateScript">
     <GROUP id="{D71D81D4-16E3-C5D9-10D8-11872DD40E31}" name="Source">
+      <GROUP id="{DB0ACCFF-AF6D-E11F-1BDB-A1F8AC442D35}" name="GUI">
+        <FILE id="vSTGiu" name="CodeEditor.cpp" compile="1" resource="0" file="Source/CodeEditor.cpp"/>
+        <FILE id="TpSqQt" name="CodeEditor.h" compile="0" resource="0" file="Source/CodeEditor.h"/>
+      </GROUP>
+      <FILE id="xfjEuH" name="AbstractCompiler.h" compile="0" resource="0"
+            file="Source/AbstractCompiler.h"/>
+      <FILE id="B6EZtO" name="ClangExternalCompiler.cpp" compile="1" resource="0"
+            file="Source/ClangExternalCompiler.cpp"/>
+      <FILE id="qXQ4mj" name="ClangExternalCompiler.h" compile="0" resource="0"
+            file="Source/ClangExternalCompiler.h"/>
       <GROUP id="{B4D00BBF-74EE-E674-ADF6-4FF9CD854766}" name="DataStructure">
         <FILE id="TLCpGp" name="LockFreeFifo.h" compile="0" resource="0" file="Source/LockFreeFifo.h"/>
       </GROUP>
@@ -45,9 +55,9 @@
         <CONFIGURATION isDebug="1" name="Debug"/>
         <CONFIGURATION isDebug="0" name="Release"/>
         <CONFIGURATION isDebug="0" name="ReleasePremium" defines="WAV_SCRIPT_PREMIUM=1"
-                       headerPath="./WSPremium/Source/"/>
+                       headerPath="./Source/WSPremium;" libraryPath="./Source/WSPremium/Builds/VisualStudio2026/x64/Release/lib;"/>
         <CONFIGURATION isDebug="1" name="DebugPremium" defines="WAV_SCRIPT_PREMIUM=1"
-                       headerPath="./WSPremium/Source/"/>
+                       headerPath="./Source/WSPremium;" libraryPath="./Source/WSPremium/Builds/VisualStudio2026/x64/Debug/lib;"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_audio_basics" path="../../juce"/>

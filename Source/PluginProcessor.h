@@ -10,6 +10,8 @@
 
 #include <JuceHeader.h>
 #include "WaviateInput.h"
+#include "AbstractCompiler.h"
+#include <atomic>
 
 #ifdef WAV_SCRIPT_PREMIUM
 #include "WSPremium/GameControllerInterface.h"
@@ -37,6 +39,9 @@ public:
    #endif
 
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    std::atomic<SampleShader> activeSampleShader;
+    std::atomic<FrequencyShader> activeFrequencyShader;
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;

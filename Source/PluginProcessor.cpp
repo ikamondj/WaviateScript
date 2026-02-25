@@ -12,7 +12,7 @@
 //==============================================================================
 WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : gameControllerInterface(gamepadEventsQueue),
+     : 
     AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
@@ -21,6 +21,9 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
                        )
+#ifdef WAV_SCRIPT_PREMIUM
+    , gameControllerInterface(gamepadEventsQueue)
+#endif 
 #endif
 {
     wavInput = std::make_unique<WaviateSampleInput>();
@@ -271,19 +274,19 @@ void WaviateScriptAudioProcessor::processSegment(juce::AudioBuffer<float>& mainO
         mainOut.clear(ch, startSample, numSamplesInSegment);
 
     // ----- SampleWise Processing (segment) -----
-    for (int ch = 0; ch < numInputCh; ++ch)
-    {
-        wavInput->outputChannel = ch;
+    SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
+    if (sampleShader) {
+        for (int ch = 0; ch < numInputCh; ++ch)
+        {
+            wavInput->outputChannel = ch;
 
-        const float* in  = mainIn.getReadPointer(ch, startSample);
-        float* out       = mainOut.getWritePointer(ch, startSample);
+            const float* in  = mainIn.getReadPointer(ch, startSample);
+            float* out       = mainOut.getWritePointer(ch, startSample);
 
-        // Example pass-through (replace with your time-domain callback)
-        std::memcpy(out, in, sizeof(float) * (size_t)numSamplesInSegment);
-
-        // If you have a DLL function pointer like:
-        //   void (*processTime)(WavInput* in, float* out, int numSamples);
-        // call it here, per-channel or per-block as you designed.
+            for (int samp = 0; samp < numSamplesInSegment; samp += 1) {
+                out[startSample + samp] = sampleShader(wavInput.get(), nullptr);
+            }
+        }
     }
 
     // ----- FrequencyWise Processing (segment) -----

@@ -26,6 +26,11 @@ struct WaviateSampleInput {
     uint64_t* sampleWhenControllerAxisChanged;
     int32_t controllerAxisCount;
 
+    int32_t* oscInts;
+    uint32_t* oscColors
+    float* oscFloats;
+    char** oscStrings;
+
     float sampleRate;
     float** previousSamples;
     float** inputDeviceSamples;
