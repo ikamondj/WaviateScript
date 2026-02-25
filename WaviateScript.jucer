@@ -45,9 +45,9 @@
         <CONFIGURATION isDebug="1" name="Debug"/>
         <CONFIGURATION isDebug="0" name="Release"/>
         <CONFIGURATION isDebug="0" name="ReleasePremium" defines="WAV_SCRIPT_PREMIUM=1"
-                       headerPath="./WSPremium/Source/" libraryPath="./Source/WSPremium/Builds/VisualStudio2026/x64/Release/Static Library/"/>
+                       headerPath="./WSPremium/Source/"/>
         <CONFIGURATION isDebug="1" name="DebugPremium" defines="WAV_SCRIPT_PREMIUM=1"
-                       headerPath="./WSPremium/Source/" libraryPath="./Source/WSPremium/Builds/VisualStudio2026/x64/Debug/Static Library/"/>
+                       headerPath="./WSPremium/Source/"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_audio_basics" path="../../juce"/>

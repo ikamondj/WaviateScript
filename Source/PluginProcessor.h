@@ -70,7 +70,8 @@ public:
         int numOutputCh);
     std::unique_ptr<WaviateSampleInput> wavInput;
 #ifdef WAV_SCRIPT_PREMIUM
-    GameControllerInterface controller;
+    GameControllerInterface gameControllerInterface;
+    SpscEventQueue<GameControllerEvent, cueCap, true> gamepadEventsQueue;
 #endif
 private:
     //==============================================================================

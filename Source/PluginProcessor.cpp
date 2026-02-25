@@ -12,7 +12,8 @@
 //==============================================================================
 WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
+     : gameControllerInterface(gamepadEventsQueue),
+    AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
