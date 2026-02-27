@@ -1,0 +1,8 @@
+{
+  "information_for_contributors": [
+    "This file is a reference to the standard C++ syntax highlighting.",
+    "Waviate .wcpp files use the standard C++ language syntax."
+  ],
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "version": "https://github.com/Microsoft/vscode/blob/master/extensions/cpp/syntaxes/cpp.tmLanguage.json"
+}

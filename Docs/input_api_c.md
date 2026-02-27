@@ -1,5 +1,8 @@
 
 ```cpp
+[include](../src/waviate/WaviateInput.h)
+```
+```cpp
 float sample_process(const WaviateSampleInput*, WaviateSampleStateWriter*);
 
 struct WaviateSampleInput {

@@ -4,24 +4,48 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="udIh3w" name="WaviateScript">
     <GROUP id="{D71D81D4-16E3-C5D9-10D8-11872DD40E31}" name="Source">
+      <GROUP id="{564046DE-B6F4-DE26-60D0-F82EA0E822D8}" name="Languages">
+        <FILE id="eZGBGX" name="CFileTemplateGenerator.cpp" compile="1" resource="0"
+              file="Source/CFileTemplateGenerator.cpp"/>
+        <FILE id="ddxMfI" name="CFileTemplateGenerator.h" compile="0" resource="0"
+              file="Source/CFileTemplateGenerator.h"/>
+        <FILE id="ZWpnfL" name="CppFileTemplateGenerator.cpp" compile="1" resource="0"
+              file="Source/CppFileTemplateGenerator.cpp"/>
+        <FILE id="yDMXMv" name="CppFileTemplateGenerator.h" compile="0" resource="0"
+              file="Source/CppFileTemplateGenerator.h"/>
+        <FILE id="UOP5MS" name="NewFileTemplateGenerator.cpp" compile="1" resource="0"
+              file="Source/NewFileTemplateGenerator.cpp"/>
+        <FILE id="FUmZs7" name="NewFileTemplateGenerator.h" compile="0" resource="0"
+              file="Source/NewFileTemplateGenerator.h"/>
+        <FILE id="h7tflh" name="RustFileTemplateGenerator.cpp" compile="1"
+              resource="0" file="Source/RustFileTemplateGenerator.cpp"/>
+        <FILE id="rDbfRo" name="RustFileTemplateGenerator.h" compile="0" resource="0"
+              file="Source/RustFileTemplateGenerator.h"/>
+      </GROUP>
+      <GROUP id="{87D8093D-F43C-F0D0-E966-0B2515BC63E4}" name="Compiler">
+        <FILE id="D35Vln" name="Compilers.h" compile="0" resource="0" file="Source/Compilers.h"/>
+        <FILE id="O4BrSy" name="WasmCompiler.cpp" compile="1" resource="0"
+              file="Source/WasmCompiler.cpp"/>
+        <FILE id="vTJPeL" name="WasmCompiler.h" compile="0" resource="0" file="Source/WasmCompiler.h"/>
+        <FILE id="xfjEuH" name="AbstractCompiler.h" compile="0" resource="0"
+              file="Source/AbstractCompiler.h"/>
+        <FILE id="B6EZtO" name="ClangExternalCompiler.cpp" compile="1" resource="0"
+              file="Source/ClangExternalCompiler.cpp"/>
+        <FILE id="qXQ4mj" name="ClangExternalCompiler.h" compile="0" resource="0"
+              file="Source/ClangExternalCompiler.h"/>
+        <FILE id="e6xeFF" name="RustCompiler.cpp" compile="1" resource="0"
+              file="Source/RustCompiler.cpp"/>
+        <FILE id="WX2HOP" name="RustCompiler.h" compile="0" resource="0" file="Source/RustCompiler.h"/>
+      </GROUP>
       <GROUP id="{DB0ACCFF-AF6D-E11F-1BDB-A1F8AC442D35}" name="GUI">
         <FILE id="vSTGiu" name="CodeEditor.cpp" compile="1" resource="0" file="Source/CodeEditor.cpp"/>
         <FILE id="TpSqQt" name="CodeEditor.h" compile="0" resource="0" file="Source/CodeEditor.h"/>
       </GROUP>
-      <FILE id="xfjEuH" name="AbstractCompiler.h" compile="0" resource="0"
-            file="Source/AbstractCompiler.h"/>
-      <FILE id="B6EZtO" name="ClangExternalCompiler.cpp" compile="1" resource="0"
-            file="Source/ClangExternalCompiler.cpp"/>
-      <FILE id="qXQ4mj" name="ClangExternalCompiler.h" compile="0" resource="0"
-            file="Source/ClangExternalCompiler.h"/>
       <GROUP id="{B4D00BBF-74EE-E674-ADF6-4FF9CD854766}" name="DataStructure">
         <FILE id="TLCpGp" name="LockFreeFifo.h" compile="0" resource="0" file="Source/LockFreeFifo.h"/>
       </GROUP>
       <GROUP id="{F056CC0F-5F5D-B1C5-DDBD-9EC9FAF730B8}" name="Inputs"/>
       <FILE id="yvUwGd" name="WaviateInput.h" compile="0" resource="0" file="Source/WaviateInput.h"/>
-      <FILE id="O4BrSy" name="WasmCompiler.cpp" compile="1" resource="0"
-            file="Source/WasmCompiler.cpp"/>
-      <FILE id="vTJPeL" name="WasmCompiler.h" compile="0" resource="0" file="Source/WasmCompiler.h"/>
       <FILE id="rTu4JN" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>
       <FILE id="inA8oH" name="PluginProcessor.h" compile="0" resource="0"

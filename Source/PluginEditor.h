@@ -1,7 +1,7 @@
 /*
   ==============================================================================
 
-    This file contains the basic framework code for a JUCE plugin editor.
+    Simple JUCE plugin editor: top bar with Open button + current script name.
 
   ==============================================================================
 */
@@ -10,28 +10,47 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
-#include "CodeEditor.h"
+#include "CFileTemplateGenerator.h"
+#include "CppFileTemplateGenerator.h"
+#include "RustFileTemplateGenerator.h"
 
 //==============================================================================
-/**
-*/
-class WaviateScriptAudioProcessorEditor  : public juce::AudioProcessorEditor
+class WaviateScriptAudioProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
-    WaviateScriptAudioProcessorEditor (WaviateScriptAudioProcessor&);
+    explicit WaviateScriptAudioProcessorEditor(WaviateScriptAudioProcessor&);
     ~WaviateScriptAudioProcessorEditor() override;
 
-    //==============================================================================
-    void paint (juce::Graphics&) override;
+    void paint(juce::Graphics&) override;
     void resized() override;
 
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
-    WaviateScriptAudioProcessor& audioProcessor;
-    std::unique_ptr<juce::CodeEditorComponent> codeEditor;
-    juce::CPlusPlusCodeTokeniser tokenizer;
-    juce::CodeDocument codeDoc;
+    void onNewCClicked();
+    void onNewCppClicked();
+    void onNewRustClicked();
+    void onOpenClicked();
+    void createNewFileWithTemplate(const juce::String& fileExtension, const juce::String& templateContent);
+    void setLoadedScriptFile(const juce::File& file);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessorEditor)
+    WaviateScriptAudioProcessor& audioProcessor;
+
+    // Top bar UI
+    juce::Component topBar;
+    juce::TextButton newCButton{ "New C" };
+    juce::TextButton newCppButton{ "New C++" };
+    juce::TextButton newRustButton{ "New Rust" };
+    juce::TextButton openButton{ "Open…" };
+    juce::Label currentScriptLabel;
+
+    juce::File currentScriptFile;
+    std::unique_ptr<juce::FileChooser> fileChooser;
+
+
+    static constexpr int topBarHeight = 36;
+
+    CfileTemplateGenerator cGen;
+    CppFileTemplateGenerator cppGen;
+    RustFileTemplateGenerator rustGen;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaviateScriptAudioProcessorEditor)
 };

@@ -54,7 +54,7 @@ public:
     bool producesMidi() const override;
     bool isMidiEffect() const override;
     double getTailLengthSeconds() const override;
-    void loadProgram();
+    void loadProgram(const juce::File& file);
 
     //==============================================================================
     int getNumPrograms() override;
@@ -74,6 +74,7 @@ public:
         int numInputCh,
         int numOutputCh);
     std::unique_ptr<WaviateSampleInput> wavInput;
+    std::unordered_map<std::string, std::unique_ptr<AbstractCompiler>> compilers;
 #ifdef WAV_SCRIPT_PREMIUM
     GameControllerInterface gameControllerInterface;
     SpscEventQueue<GameControllerEvent, cueCap, true> gamepadEventsQueue;

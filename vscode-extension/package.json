@@ -1,0 +1,125 @@
+{
+  "name": "waviate-script",
+  "displayName": "Waviate Script",
+  "description": "Language support and intellisense for Waviate Script (.wc, .wcpp, .wrs) files with Waviate API autocompletion",
+  "version": "0.1.0",
+  "publisher": "waviate",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters"
+  ],
+  "keywords": [
+    "waviate",
+    "audio",
+    "dsp",
+    "shader"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ikamondj/WaviateScript"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "waviate-c",
+        "aliases": [
+          "Waviate C",
+          "wc"
+        ],
+        "extensions": [
+          ".wc"
+        ],
+        "configuration": "./language-configurations/wc.json",
+        "mimetypes": [
+          "text/x-wc"
+        ]
+      },
+      {
+        "id": "waviate-cpp",
+        "aliases": [
+          "Waviate C++",
+          "wcpp"
+        ],
+        "extensions": [
+          ".wcpp"
+        ],
+        "configuration": "./language-configurations/wcpp.json",
+        "mimetypes": [
+          "text/x-wcpp"
+        ]
+      },
+      {
+        "id": "waviate-rust",
+        "aliases": [
+          "Waviate Rust",
+          "wrs"
+        ],
+        "extensions": [
+          ".wrs"
+        ],
+        "configuration": "./language-configurations/wrs.json",
+        "mimetypes": [
+          "text/x-wrs"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "waviate-c",
+        "scopeName": "source.c",
+        "path": "./syntaxes/c.tmLanguage.json"
+      },
+      {
+        "language": "waviate-cpp",
+        "scopeName": "source.cpp",
+        "path": "./syntaxes/cpp.tmLanguage.json"
+      },
+      {
+        "language": "waviate-rust",
+        "scopeName": "source.rust",
+        "path": "./syntaxes/rust.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "waviate-c",
+        "path": "./snippets/waviate-c.json"
+      },
+      {
+        "language": "waviate-cpp",
+        "path": "./snippets/waviate-cpp.json"
+      },
+      {
+        "language": "waviate-rust",
+        "path": "./snippets/waviate-rust.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "waviate.downloadHeaders",
+        "title": "Waviate: Download Headers"
+      }
+    ]
+  },
+  "activationEvents": [
+    "onLanguage:waviate-c",
+    "onLanguage:waviate-cpp",
+    "onLanguage:waviate-rust",
+    "workspaceContains:**/*.wc",
+    "workspaceContains:**/*.wcpp",
+    "workspaceContains:**/*.wrs"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "node ./test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "@types/node": "^20.0.0"
+  }
+}

@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include <filesystem>
 #include <fstream>
+#include "WaviateInput.h"
 
 void ClangExternalCompiler::compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) {
     // Initialize output to nullptr

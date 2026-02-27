@@ -1,0 +1,8 @@
+{
+  "information_for_contributors": [
+    "This file is a reference to the standard Rust syntax highlighting.",
+    "Waviate .wrs files use the standard Rust language syntax."
+  ],
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "version": "https://github.com/rust-lang/rust-syntax-definitions"
+}

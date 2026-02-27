@@ -1,7 +1,9 @@
 #pragma once
-#include "AbstractCompiler.h"
+
 #include <JuceHeader.h>
 #include <memory>
+#include "AbstractCompiler.h"
+;
 class ClangExternalCompiler : public AbstractCompiler {
 public:
     void compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) override;

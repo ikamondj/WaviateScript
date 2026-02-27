@@ -1,0 +1,75 @@
+{
+  "Waviate Sample Process": {
+    "prefix": "waviate_sample",
+    "body": [
+      "float sample_process(const WaviateSampleInput* in, WaviateSampleStateWriter* out) {",
+      "    // Process one audio sample",
+      "    float input = in->inputDeviceSamples[in->outputChannel][in->positionInBlock];",
+      "    float output = input; // Your processing here",
+      "    return output;",
+      "}"
+    ],
+    "description": "Waviate sample processing function template"
+  },
+  "Waviate Frequency Process": {
+    "prefix": "waviate_frequency",
+    "body": [
+      "float frequency_process(const WaviateFrequencyInput* in, WaviateFrequencyStateWriter* out) {",
+      "    // Process one frequency bin",
+      "    float bin = 1.0; // Your processing here",
+      "    return bin;",
+      "}"
+    ],
+    "description": "Waviate frequency processing function template"
+  },
+  "WaviateSampleInput": {
+    "prefix": "WaviateSampleInput",
+    "body": "WaviateSampleInput",
+    "description": "Waviate sample input structure"
+  },
+  "Access Input Samples": {
+    "prefix": "input_samples",
+    "body": "in->inputDeviceSamples[${1:channel}][${2:sample}]",
+    "description": "Access input audio samples"
+  },
+  "Access Output Buffer": {
+    "prefix": "output_buffer",
+    "body": "in->currentSampleData[${1:channel}][${2:sample}]",
+    "description": "Access output audio buffer"
+  },
+  "Get Sample Position": {
+    "prefix": "sample_pos",
+    "body": "in->positionInBlock",
+    "description": "Get current sample position in block"
+  },
+  "Get MIDI Note": {
+    "prefix": "midi_note",
+    "body": "in->midiNoteOn[${1:note_number}]",
+    "description": "Check if MIDI note is on"
+  },
+  "Get MIDI CC": {
+    "prefix": "midi_cc",
+    "body": "in->midiCCValue[${1:cc_number}]",
+    "description": "Get MIDI control change value"
+  },
+  "Get Sample Rate": {
+    "prefix": "sample_rate",
+    "body": "in->sampleRate",
+    "description": "Get audio sample rate"
+  },
+  "Get Controller Axis": {
+    "prefix": "controller_axis",
+    "body": "in->controllerAxisValue[${1:axis_index}]",
+    "description": "Get controller axis value"
+  },
+  "STL Vector": {
+    "prefix": "std_vector",
+    "body": "std::vector<${1:type}> ${2:name};",
+    "description": "Standard library vector"
+  },
+  "STL String": {
+    "prefix": "std_string",
+    "body": "std::string ${1:name};",
+    "description": "Standard library string"
+  }
+}

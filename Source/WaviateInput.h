@@ -18,8 +18,8 @@ struct WaviateSampleInput {
     int32_t inputChannelCount;
     int32_t sideChainChannelCount;
     int32_t sampleMemoryCount;
-    int32_t outputChannelCount;
-    uint8_t outputChannel;
+    int32_t channelCount;
+    uint8_t channel;
 
     uint8_t* midiNoteOn;
     uint8_t* midiCCValue;

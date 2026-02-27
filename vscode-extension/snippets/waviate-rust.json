@@ -1,0 +1,59 @@
+{
+  "Waviate Sample Process": {
+    "prefix": "waviate_sample",
+    "body": [
+      "pub fn sample_process(",
+      "    input: &WaviateSampleInput,",
+      "    state: &mut WaviateSampleStateWriter,",
+      ") -> f32 {",
+      "    // Process one audio sample",
+      "    let sample = input.inputDeviceSamples()[input.outputChannel() as usize][input.positionInBlock() as usize];",
+      "    sample // Your processing here",
+      "}"
+    ],
+    "description": "Waviate sample processing function template for Rust"
+  },
+  "Waviate Frequency Process": {
+    "prefix": "waviate_frequency",
+    "body": [
+      "pub fn frequency_process(",
+      "    input: &WaviateFrequencyInput,",
+      "    state: &mut WaviateFrequencyStateWriter,",
+      ") -> f32 {",
+      "    let bin = 1.0; // Your processing here",
+      "    bin",
+      "}"
+    ],
+    "description": "Waviate frequency processing function template for Rust"
+  },
+  "Waviate Struct Reference": {
+    "prefix": "waviate_ref",
+    "body": "let ${1:data} = &input;",
+    "description": "Reference Waviate input struct"
+  },
+  "Get Sample Position": {
+    "prefix": "sample_pos",
+    "body": "input.positionInBlock()",
+    "description": "Get current sample position in block"
+  },
+  "Get MIDI Note": {
+    "prefix": "midi_note",
+    "body": "input.midiNoteOn()[${1:note}]",
+    "description": "Check if MIDI note is on"
+  },
+  "Get Sample Rate": {
+    "prefix": "sample_rate",
+    "body": "input.sampleRate()",
+    "description": "Get audio sample rate"
+  },
+  "Match Pattern": {
+    "prefix": "match",
+    "body": [
+      "match ${1:value} {",
+      "    ${2:pattern} => ${3:result},",
+      "    _ => ${4:default},",
+      "}"
+    ],
+    "description": "Rust match expression"
+  }
+}

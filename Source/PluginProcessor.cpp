@@ -8,6 +8,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Compilers.h"
 
 //==============================================================================
 WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
@@ -27,6 +28,10 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
 #endif
 {
     wavInput = std::make_unique<WaviateSampleInput>();
+
+    compilers.insert({ ".wc", std::make_unique<ClangExternalCompiler>()});
+    compilers.insert({ ".wcpp", std::make_unique<ClangExternalCompiler>()});
+    compilers.insert({ ".wrs", std::make_unique<RustCompiler>() });
 }
 
 WaviateScriptAudioProcessor::~WaviateScriptAudioProcessor()
@@ -71,9 +76,17 @@ double WaviateScriptAudioProcessor::getTailLengthSeconds() const
     return 0.0;
 }
 
-void WaviateScriptAudioProcessor::loadProgram()
+void WaviateScriptAudioProcessor::loadProgram(const juce::File& file)
 {
-
+    auto ext = file.getFileExtension().toStdString();
+    juce::StringArray content;
+    file.readLines(content);
+    auto source = content.joinIntoString("\n");
+    SampleShader samp;
+    FrequencyShader freq;
+    compilers[ext]->compileSource(source.toStdString(), samp, freq);
+    activeSampleShader.store(samp, std::memory_order_release);
+    activeFrequencyShader.store(freq, std::memory_order_release);
 }
 
 int WaviateScriptAudioProcessor::getNumPrograms()
@@ -253,7 +266,7 @@ void WaviateScriptAudioProcessor::processSegment(juce::AudioBuffer<float>& mainO
     wavInput->currentSampleData = mainOut.getArrayOfWritePointers();
     wavInput->midiSegmentSize   = numSamplesInSegment; // segment size, not whole block
     wavInput->inputChannelCount  = numInputCh;
-    wavInput->outputChannelCount = numOutputCh;
+    wavInput->channelCount = numOutputCh;
 
     if (sideIn != nullptr && sideIn->getNumChannels() > 0)
     {
@@ -278,7 +291,7 @@ void WaviateScriptAudioProcessor::processSegment(juce::AudioBuffer<float>& mainO
     if (sampleShader) {
         for (int ch = 0; ch < numInputCh; ++ch)
         {
-            wavInput->outputChannel = ch;
+            wavInput->channel = ch;
 
             const float* in  = mainIn.getReadPointer(ch, startSample);
             float* out       = mainOut.getWritePointer(ch, startSample);
@@ -328,6 +341,8 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         // If the host provides it, sideIn.getNumSamples() should match.
         sideInPtr = &sideIn;
     }
+
+    wavInput->blockSize = buffer.getNumSamples();
 
     // Determine effective input channels on the MAIN input bus
     const int mainInputCh = mainIn.getNumChannels();
