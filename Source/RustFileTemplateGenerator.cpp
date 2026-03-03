@@ -7,10 +7,11 @@
 
   ==============================================================================
 */
-
+#ifdef WAV_SCRIPT_PREMIUM
 #include "RustFileTemplateGenerator.h"
 
 std::string RustFileTemplateGenerator::getDefaultFileSource()
 {
     return std::string();
 }
+#endif

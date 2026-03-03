@@ -12,14 +12,15 @@
 
 std::string CfileTemplateGenerator::getDefaultFileSource()
 {
-    return "float sample_process(const WaviateSampleInput* input, WaviateSampleStateWriter* writer) {\n"
-        "\treturn 0.0f;\n"
-        "}\n"
-        "\n"
-        "/* Uncomment frequency_process below to enable frequency domain processing */\n"
-        "//float frequency_process(const WaviateFrequencyInput* input, WaviateFrequencyStateWriter* writer) {\n"
-        "//\tint channel = input->channel;\n"
-        "//\tint bin = input->bin;\n"
-        "//\treturn input->currentFrequencyData[channel][bin];\n"
-        "//}\n";
+    return R"(float sample_process(const WaviateSampleInput* input, WaviateSampleStateWriter* writer) {
+    return 0.0f;
+}
+
+/* Uncomment frequency_process below to enable frequency domain processing */
+// float frequency_process(const WaviateFrequencyInput* input, WaviateFrequencyStateWriter* writer) {
+//     int channel = input->channel;
+//     int bin = input->bin;
+//     return input->currentFrequencyData[channel][bin];
+// }
+)";
 }

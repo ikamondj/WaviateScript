@@ -29,8 +29,8 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
 {
     wavInput = std::make_unique<WaviateSampleInput>();
 
-    compilers.insert({ ".wc", std::make_unique<ClangExternalCompiler>()});
-    compilers.insert({ ".wcpp", std::make_unique<ClangExternalCompiler>()});
+    compilers.insert({ ".wc", std::make_unique<ClangCompiler<false>>()});
+    compilers.insert({ ".wcpp", std::make_unique<ClangCompiler<true>>()});
     compilers.insert({ ".wrs", std::make_unique<RustCompiler>() });
 }
 

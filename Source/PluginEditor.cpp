@@ -14,7 +14,7 @@
 WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScriptAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p)
 {
-    setSize(600, 400);
+    setSize(800, 600);
 
     // Top bar container
     addAndMakeVisible(topBar);
@@ -25,9 +25,10 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
 
     topBar.addAndMakeVisible(newCppButton);
     newCppButton.onClick = [this] { onNewCppClicked(); };
-
+#ifdef WAV_SCRIPT_PREMIUM
     topBar.addAndMakeVisible(newRustButton);
     newRustButton.onClick = [this] { onNewRustClicked(); };
+#endif
 
     // Open button
     topBar.addAndMakeVisible(openButton);
@@ -39,6 +40,20 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     currentScriptLabel.setJustificationType(juce::Justification::centredLeft);
     currentScriptLabel.setInterceptsMouseClicks(false, false);
 
+    // Code editor
+    addAndMakeVisible(codeEditor);
+
+    // Empty state
+    addAndMakeVisible(emptyStateLabel);
+    emptyStateLabel.setText(
+        "Create a new file or open an existing one to start editing",
+        juce::dontSendNotification
+    );
+    emptyStateLabel.setJustificationType(juce::Justification::centred);
+    emptyStateLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+    emptyStateLabel.setFont(juce::Font(16.0f));
+
+    showEmptyState();
     resized();
 }
 
@@ -69,9 +84,10 @@ void WaviateScriptAudioProcessorEditor::resized()
 
     newCppButton.setBounds(bar.removeFromLeft(buttonW));
     bar.removeFromLeft(spacing);
-
+#ifdef WAV_SCRIPT_PREMIUM
     newRustButton.setBounds(bar.removeFromLeft(buttonW));
     bar.removeFromLeft(spacing);
+#endif
 
     // Open button
     openButton.setBounds(bar.removeFromLeft(buttonW));
@@ -79,6 +95,10 @@ void WaviateScriptAudioProcessorEditor::resized()
 
     // Rest: current script name
     currentScriptLabel.setBounds(bar);
+
+    // Code editor and empty state fill the remaining space
+    codeEditor.setBounds(area);
+    emptyStateLabel.setBounds(area);
 }
 
 //==============================================================================
@@ -93,13 +113,13 @@ void WaviateScriptAudioProcessorEditor::onNewCppClicked()
     const auto templateContent = cppGen.getDefaultFileSource();
     createNewFileWithTemplate(".wcpp", templateContent);
 }
-
+#ifdef WAV_SCRIPT_PREMIUM
 void WaviateScriptAudioProcessorEditor::onNewRustClicked()
 {
     const auto templateContent = rustGen.getDefaultFileSource();
     createNewFileWithTemplate(".wrs", templateContent);
 }
-
+#endif
 void WaviateScriptAudioProcessorEditor::createNewFileWithTemplate(const juce::String& fileExtension, const juce::String& templateContent)
 {
     fileChooser = std::make_unique<juce::FileChooser>(
@@ -135,8 +155,18 @@ void WaviateScriptAudioProcessorEditor::createNewFileWithTemplate(const juce::St
                 return;
             }
 
+            isUnsavedNewFile = false;
             setLoadedScriptFile(file);
         });
+
+    // Show transient unsaved file state
+    isUnsavedNewFile = true;
+    currentScriptLabel.setText("• untitled" + fileExtension, juce::dontSendNotification);
+    codeEditor.ensureEditorCreated();
+    codeEditor.setText(templateContent);
+    codeEditor.setFileExtension(fileExtension);
+    hideEmptyState();
+    repaint();
 }
 
 void WaviateScriptAudioProcessorEditor::onOpenClicked()
@@ -173,9 +203,20 @@ void WaviateScriptAudioProcessorEditor::onOpenClicked()
 void WaviateScriptAudioProcessorEditor::setLoadedScriptFile(const juce::File& file)
 {
     currentScriptFile = file;
+    isUnsavedNewFile = false;
 
     // Always-visible display name (just the filename)
     currentScriptLabel.setText("Loaded: " + file.getFileName(), juce::dontSendNotification);
+
+    // Load file content into editor
+    if (file.existsAsFile())
+    {
+        const auto content = file.loadFileAsString();
+        codeEditor.ensureEditorCreated();
+        codeEditor.setText(content);
+        codeEditor.setFileExtension(file.getFileExtension());
+        hideEmptyState();
+    }
 
     // If you want to notify the processor later, this is the hook:
     // audioProcessor.loadScriptFile(file);
@@ -184,4 +225,16 @@ void WaviateScriptAudioProcessorEditor::setLoadedScriptFile(const juce::File& fi
         audioProcessor.loadProgram(currentScriptFile);
 
     repaint();
+}
+
+void WaviateScriptAudioProcessorEditor::showEmptyState()
+{
+    emptyStateLabel.setVisible(true);
+    codeEditor.setVisible(false);
+}
+
+void WaviateScriptAudioProcessorEditor::hideEmptyState()
+{
+    emptyStateLabel.setVisible(false);
+    codeEditor.setVisible(true);
 }

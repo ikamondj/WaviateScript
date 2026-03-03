@@ -9,6 +9,9 @@
 */
 
 #pragma once
+#ifndef WAV_SCRIPT_PREMIUM
+#error "Rust support is only available in the premium version of Waviate Script."
+#endif
 #include "NewFileTemplateGenerator.h"
 class RustFileTemplateGenerator : public NewFileTemplateGenerator {
 public:
