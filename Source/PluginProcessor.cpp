@@ -24,6 +24,7 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
                        )
 #ifdef WAV_SCRIPT_PREMIUM
     , gameControllerInterface(gamepadEventsQueue)
+	, oscInterface(oscEventsQueue)
 #endif 
 #endif
 {
@@ -32,6 +33,13 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
     compilers.insert({ ".wc", std::make_unique<ClangCompiler<false>>()});
     compilers.insert({ ".wcpp", std::make_unique<ClangCompiler<true>>()});
     compilers.insert({ ".wrs", std::make_unique<RustCompiler>() });
+
+#ifdef WAV_SCRIPT_PREMIUM
+    wavInput->oscColors = oscInterface.getOscColors();
+	wavInput->oscFloats = oscInterface.getOscFloats();
+	wavInput->oscInts = oscInterface.getOscInts();
+	wavInput->oscStrings = oscInterface.getOscStrings();
+#endif
 }
 
 WaviateScriptAudioProcessor::~WaviateScriptAudioProcessor()
@@ -324,7 +332,14 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     bool sidechainEnabled = false;
 
 #ifdef WAV_SCRIPT_PREMIUM
-
+    {
+		OSCInputEvent oscEvent;
+        while (oscEventsQueue.popOne(oscEvent)) {
+            oscInterface.receiveEventOnAudioThread(oscEvent);
+        }
+    }
+    
+    
 #endif
 
     if (getBusCount(true) > 1)

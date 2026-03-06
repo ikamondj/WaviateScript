@@ -16,6 +16,8 @@
 #ifdef WAV_SCRIPT_PREMIUM
 #include "GameControllerInterface.h"
 #include "GameControllerInputEvent.h"
+#include "OSCInterface.h"
+#include "OSCInput.h"
 #endif
 
 typedef float (*SampleWiseProcessor)(const WaviateSampleInput*, void* state);
@@ -78,6 +80,8 @@ public:
 #ifdef WAV_SCRIPT_PREMIUM
     GameControllerInterface gameControllerInterface;
     SpscEventQueue<GameControllerEvent, cueCap, true> gamepadEventsQueue;
+	OSCInterface oscInterface;
+	SpscEventQueue<OSCInputEvent, oscCap, true> oscEventsQueue;
 #endif
 private:
     //==============================================================================
