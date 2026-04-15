@@ -337,6 +337,10 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         while (oscEventsQueue.popOne(oscEvent)) {
             oscInterface.receiveEventOnAudioThread(oscEvent);
         }
+		GameControllerEvent gamepadEvent;
+        while (gamepadEventsQueue.popOne(gamepadEvent)) {
+            gameControllerInterface.receiveEventOnAudioThread(gamepadEvent);
+        }
     }
     
     
