@@ -12,5 +12,5 @@
 #include "NewFileTemplateGenerator.h"
 class CppFileTemplateGenerator : public NewFileTemplateGenerator {
 public:
-    std::string getDefaultFileSource() override;
+    std::string getDefaultFileSource() const override;
 };

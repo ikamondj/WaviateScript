@@ -10,7 +10,17 @@
 
 #include "CppFileTemplateGenerator.h"
 
-std::string CppFileTemplateGenerator::getDefaultFileSource()
+std::string CppFileTemplateGenerator::getDefaultFileSource() const
 {
-    return std::string();
+    return R"(float SampleProcess(const WaviateSample& wav) {
+    return 0.0f;
+}
+
+/* Uncomment frequency_process below to enable frequency domain processing */
+// WaviateComplex frequency_process(const WaviateFrequency& wav) {
+//     int channel = wav.getChannel();
+//     int bin = wav.getBin();
+//     return wav.getIncomingSample(channel, bin);
+// }
+)";
 }

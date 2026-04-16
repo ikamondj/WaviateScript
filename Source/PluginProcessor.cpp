@@ -9,6 +9,12 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Compilers.h"
+#include "fftw3.h"
+#include <span>
+
+const size_t maxBlockSize = 8192;
+const size_t startingMidiPerSampleCount = 64;
+const size_t midiInitialCapacity = 128;
 
 //==============================================================================
 WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
@@ -22,6 +28,7 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
                        )
+    , visualizer(2)
 #ifdef WAV_SCRIPT_PREMIUM
     , gameControllerInterface(gamepadEventsQueue)
 #endif 
@@ -31,7 +38,17 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
 
     compilers.insert({ ".wc", std::make_unique<ClangCompiler<false>>()});
     compilers.insert({ ".wcpp", std::make_unique<ClangCompiler<true>>()});
+#ifdef WAV_SCRIPT_PREMIUM
     compilers.insert({ ".wrs", std::make_unique<RustCompiler>() });
+#endif
+    InitializeMidiMessageLookup(maxBlockSize);
+}
+
+void WaviateScriptAudioProcessor::InitializeMidiMessageLookup(size_t blockSize) {
+    midiBlockMessages.resize(maxBlockSize);
+    for (int i = 0; i < maxBlockSize; i += 1) {
+        midiBlockMessages[i].reserve(midiInitialCapacity);
+    }
 }
 
 WaviateScriptAudioProcessor::~WaviateScriptAudioProcessor()
@@ -162,17 +179,19 @@ bool WaviateScriptAudioProcessor::isBusesLayoutSupported (const BusesLayout& lay
 std::array<bool, 128> sustainDeferredNoteOff{}; // notes released while sustain is down
 bool sustainDown = false;
 
-static inline void clearAllNotes(uint8_t* midiNote, std::array<bool,128>& deferred)
+static inline void clearAllNotes(uint8_t* midiNote, std::span<bool,128> deferred)
 {
     std::memset(midiNote, 0, 128 * sizeof(bool));
-    deferred.fill(false);
+    for (int i = 0; i < deferred.size(); i += 1) {
+        deferred[i] = false;
+    }
 }
 
 static inline void applyMidiToState(const juce::MidiMessage& m,
                                    uint8_t* midiNote,
                                    uint8_t* midiCC,
                                    bool& sustainDown,
-                                   std::array<bool,128>& sustainDeferredNoteOff)
+                                   std::span<bool, 128> sustainDeferredNoteOff)
 {
     if (m.isNoteOn())
     {
@@ -251,62 +270,7 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
     }
 }
 
-// Helper: process one contiguous [start, start+count) segment.
-// Replace the guts with your sample-wise / frequency-wise work.
-void WaviateScriptAudioProcessor::processSegment(juce::AudioBuffer<float>& mainOut,
-                                                 const juce::AudioBuffer<float>& mainIn,
-                                                 const juce::AudioBuffer<float>* sideIn,
-                                                 int startSample,
-                                                 int numSamplesInSegment,
-                                                 int numInputCh,
-                                                 int numOutputCh)
-{
-    // Point WavInput at the *whole-block* arrays (pointers stable); DSP should use startSample offset.
-    wavInput->inputDeviceSamples = mainIn.getArrayOfReadPointers();
-    wavInput->currentSampleData = mainOut.getArrayOfWritePointers();
-    wavInput->midiSegmentSize   = numSamplesInSegment; // segment size, not whole block
-    wavInput->inputChannelCount  = numInputCh;
-    wavInput->channelCount = numOutputCh;
 
-    if (sideIn != nullptr && sideIn->getNumChannels() > 0)
-    {
-        for (int c = 0; c < sideIn->getNumChannels(); c += 1) {
-            wavInput->inputSideChainSamples = sideIn->getArrayOfReadPointers();
-        }
-        
-        wavInput->sideChainChannelCount = sideIn->getNumChannels();
-    }
-    else
-    {
-        wavInput->inputSideChainSamples    = nullptr;
-        wavInput->sideChainChannelCount = 0;
-    }
-
-    // Ensure outputs beyond inputs are cleared for this segment
-    for (int ch = numInputCh; ch < numOutputCh; ++ch)
-        mainOut.clear(ch, startSample, numSamplesInSegment);
-
-    // ----- SampleWise Processing (segment) -----
-    SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
-    if (sampleShader) {
-        for (int ch = 0; ch < numInputCh; ++ch)
-        {
-            wavInput->channel = ch;
-
-            const float* in  = mainIn.getReadPointer(ch, startSample);
-            float* out       = mainOut.getWritePointer(ch, startSample);
-
-            for (int samp = 0; samp < numSamplesInSegment; samp += 1) {
-                out[startSample + samp] = sampleShader(wavInput.get(), nullptr);
-            }
-        }
-    }
-
-    // ----- FrequencyWise Processing (segment) -----
-    // If you do FFT, do NOT assume segment size == FFT size.
-    // Use an internal fixed size / overlap-add, or only run FFT path when requested.
-    // Placeholder: no-op here.
-}
 
 void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                                juce::MidiBuffer& midiMessages)
@@ -317,9 +281,13 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const int totalNumOutputChannels = getTotalNumOutputChannels();
     const int blockNumSamples        = buffer.getNumSamples();
 
+    if (blockNumSamples > midiBlockMessages.size()) {
+        InitializeMidiMessageLookup(blockNumSamples);
+    }
+
     // Correct JUCE multi-bus handling:
-    auto& mainIn  = getBusBuffer(buffer, true,  0);
-    auto& mainOut = getBusBuffer(buffer, false, 0);
+    auto mainIn  = getBusBuffer(buffer, true,  0);
+    auto mainOut = getBusBuffer(buffer, false, 0);
 
     bool sidechainEnabled = false;
 
@@ -337,7 +305,7 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     if (sidechainEnabled)
     {
-        auto& sideIn = getBusBuffer(buffer, true, 1);
+        auto sideIn = getBusBuffer(buffer, true, 1);
         // If the host provides it, sideIn.getNumSamples() should match.
         sideInPtr = &sideIn;
     }
@@ -352,44 +320,70 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // std::memset(wavInput->midiNote, 0, sizeof(wavInput->midiNote));
     // std::memset(wavInput->midiControllersCC, 0, sizeof(wavInput->midiControllersCC));
 
-    // Build segment boundaries: MIDI events are sorted by samplePosition in Juce::MidiBuffer iteration.
-    int segmentStart = 0;
+    // Point WavInput at the *whole-block* arrays (pointers stable); DSP should use startSample offset.
+    wavInput->inputDeviceSamples = mainIn.getArrayOfReadPointers();
+    wavInput->currentSampleData = mainOut.getArrayOfWritePointers();
+    wavInput->inputChannelCount = mainInputCh;
+    wavInput->channelCount = mainOutputCh;
 
-    auto it = midiMessages.begin();
-    while (it != midiMessages.end())
+    if (sideInPtr != nullptr && sideInPtr->getNumChannels() > 0)
     {
-        const auto meta = *it;
-        const int eventSamplePos = juce::jlimit(0, blockNumSamples, meta.samplePosition);
-
-        // Process audio up to this event
-        const int segLen = eventSamplePos - segmentStart;
-        if (segLen > 0)
-        {
-            processSegment(mainOut, mainIn, sideInPtr, segmentStart, segLen,
-                           mainInputCh, mainOutputCh);
-            segmentStart = eventSamplePos;
+        for (int c = 0; c < sideInPtr->getNumChannels(); c += 1) {
+            wavInput->inputSideChainSamples = sideInPtr->getArrayOfReadPointers();
         }
 
-        // Apply all events at this same sample position
-        const int currentPos = eventSamplePos;
-        while (it != midiMessages.end() && (*it).samplePosition == currentPos)
+        wavInput->sideChainChannelCount = sideInPtr->getNumChannels();
+    }
+    else
+    {
+        wavInput->inputSideChainSamples = nullptr;
+        wavInput->sideChainChannelCount = 0;
+    }
+
+    // Ensure outputs beyond inputs are cleared for this segment
+    for (int ch = mainInputCh; ch < mainOutputCh; ++ch)
+        mainOut.clear(ch, 0, blockNumSamples);
+
+    for (const auto& midiMessage : midiMessages) {
+        int samp = midiMessage.samplePosition;
+        midiBlockMessages[samp].push_back(midiMessage.getMessage());
+    }
+
+    // ----- SampleWise Processing (segment) -----
+    SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
+    if (sampleShader) {
+        for (int ch = 0; ch < mainInputCh; ++ch)
         {
-            const juce::MidiMessage msg((*it).getMessage());
-            applyMidiToState(msg,
-                             wavInput->midiNoteOn,
-                             wavInput->midiCCValue,
-                             sustainDown,
-                             sustainDeferredNoteOff);
-            ++it;
+            wavInput->channel = ch;
+
+            const float* in = mainIn.getReadPointer(ch, 0);
+            float* out = mainOut.getWritePointer(ch, 0);
+
+            for (int samp = 0; samp < blockNumSamples; samp += 1) {
+                for (int m = 0; m < midiBlockMessages.size(); m += 1) {
+                    applyMidiToState(midiBlockMessages[samp][m], wavInput->midiNoteOn, wavInput->midiCCValue, wavInput->sustain, std::span<bool, 128>(wavInput->sustainDefer, 128));
+                    out[samp] = sampleShader(wavInput.get(), nullptr);
+                }
+                midiBlockMessages[samp].clear();
+            }
         }
     }
 
-    // Process remaining tail
-    if (segmentStart < blockNumSamples)
-    {
-        processSegment(mainOut, mainIn, sideInPtr, segmentStart, blockNumSamples - segmentStart,
-                       mainInputCh, mainOutputCh);
+    FrequencyShader freqShader = activeFrequencyShader.load(std::memory_order_acquire);
+    if (freqShader) {
+
     }
+
+    std::vector<float> samplesPush;
+    samplesPush.reserve(totalNumOutputChannels);
+    for (int i = 0; i < blockNumSamples; i += 1) {
+        samplesPush.clear();
+        for (int j = 0; j < totalNumOutputChannels; j += 1) {
+            samplesPush.push_back(mainOut.getSample(j, i));
+        }
+        visualizer.pushSample(samplesPush.data(), totalNumOutputChannels);
+    }
+
 }
 
 

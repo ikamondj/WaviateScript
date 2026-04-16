@@ -1,0 +1,211 @@
+name: Build Installer
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        arch: [x64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install WiX Toolset
+        run: |
+          choco install wixtoolset -y --force
+          refreshenv
+        shell: powershell
+
+      - name: Build solution (Release configuration)
+        run: |
+          msbuild "Builds/VisualStudio2026/WaviateScript.sln" `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /m
+        shell: powershell
+
+      - name: Verify build outputs
+        run: |
+          $standaloneExe = "Builds/VisualStudio2026/x64/Release/Standalone Plugin/WaviateScript.exe"
+          $vst3Plugin = "Builds/VisualStudio2026/x64/Release/VST3/WaviateScript.vst3"
+          
+          if (-not (Test-Path $standaloneExe)) {
+            Write-Error "Standalone executable not found at $standaloneExe"
+            exit 1
+          }
+          
+          if (-not (Test-Path $vst3Plugin)) {
+            Write-Error "VST3 plugin not found at $vst3Plugin"
+            # List what we did find
+            Get-ChildItem -Path "Builds/VisualStudio2026/x64/Release" -Recurse | 
+              Where-Object { $_.Extension -in '.exe', '.dll', '.vst3' } | 
+              ForEach-Object { Write-Host "Found: $_" }
+            exit 1
+          }
+          
+          Write-Host "✓ Standalone executable found"
+          Write-Host "✓ VST3 plugin found"
+        shell: powershell
+
+      - name: Verify header files
+        run: |
+          if (-not (Test-Path "Source/Waviate.h")) {
+            Write-Error "Waviate.h not found"
+            exit 1
+          }
+          
+          if (-not (Test-Path "Source/Waviate.hpp")) {
+            Write-Error "Waviate.hpp not found"
+            exit 1
+          }
+          
+          Write-Host "✓ Header files found"
+        shell: powershell
+
+      - name: Create installer working directory
+        run: |
+          $installerDir = "installer_build"
+          if (Test-Path $installerDir) { Remove-Item -Recurse -Force $installerDir }
+          New-Item -ItemType Directory -Path $installerDir | Out-Null
+          
+          # Copy build artifacts
+          Copy-Item "Builds/VisualStudio2026/x64/Release/Standalone Plugin/WaviateScript.exe" `
+            "$installerDir/WaviateScript_Standalone.exe"
+          
+          # Handle VST3 plugin (may be a folder or single file)
+          $vst3Src = "Builds/VisualStudio2026/x64/Release/VST3/WaviateScript.vst3"
+          if ((Get-Item $vst3Src) -is [System.IO.DirectoryInfo]) {
+            # Copy entire VST3 folder
+            Copy-Item -Recurse $vst3Src "$installerDir/WaviateScript.vst3"
+          } else {
+            # Copy single VST3 file
+            Copy-Item $vst3Src "$installerDir/WaviateScript.vst3"
+          }
+          
+          # Copy header files
+          Copy-Item "Source/Waviate.h" "$installerDir/Waviate.h"
+          Copy-Item "Source/Waviate.hpp" "$installerDir/Waviate.hpp"
+          
+          Write-Host "✓ Installer working directory created"
+          Get-ChildItem $installerDir -Recurse
+        shell: powershell
+
+      - name: Create installer license file (RTF)
+        run: |
+          $rtfContent = @"
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat
+{\fonttbl{\f0\fnil\fcharset0 Calibri;}}
+{\*\generator Riched20 10.0.19041}
+\viewkind4\uc1 
+\pard\f0\fs20\par
+Waviate Script License\par
+\par
+This software is provided AS-IS. See repository for full license.\par
+\par
+Project: https://github.com/ikamondj/WaviateScript\par
+\par
+}
+"@
+          Set-Content -Path "installer_build/LICENSE.rtf" -Value $rtfContent
+          Write-Host "✓ License file created"
+        shell: powershell
+
+      - name: Update WiX source file with correct paths
+        run: |
+          $wxsPath = "WaviateScript.wxs"
+          $wxsContent = Get-Content $wxsPath -Raw
+          $cwd = (Get-Location).Path
+          
+          # Replace placeholder source paths with absolute paths
+          $wxsContent = $wxsContent -replace 'SourceWaviateScript_Standalone\.exe', 
+            "$cwd\installer_build\WaviateScript_Standalone.exe"
+          $wxsContent = $wxsContent -replace 'SourceWaviateScript\.vst3',
+            "$cwd\installer_build\WaviateScript.vst3"
+          $wxsContent = $wxsContent -replace 'SourceWaviate\.h',
+            "$cwd\installer_build\Waviate.h"
+          $wxsContent = $wxsContent -replace 'SourceWaviate\.hpp',
+            "$cwd\installer_build\Waviate.hpp"
+          $wxsContent = $wxsContent -replace 'LICENSE\.rtf',
+            "$cwd\installer_build\LICENSE.rtf"
+          
+          $wxsContent | Set-Content "$env:TEMP\WaviateScript.wxs"
+          Write-Host "✓ WiX source file prepared at: $env:TEMP\WaviateScript.wxs"
+        shell: powershell
+
+      - name: Build installer with WiX
+        run: |
+          $wxsPath = "$env:TEMP\WaviateScript.wxs"
+          $wixobjPath = "WaviateScript.wixobj"
+          $msiPath = "WaviateScript-Installer.msi"
+          
+          Write-Host "Compiling WiX source..."
+          & "C:\Program Files (x86)\WiX Toolset v3.14\bin\candle.exe" `
+            -o "$wixobjPath" `
+            "$wxsPath"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "candle.exe failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          
+          Write-Host "Linking WiX object..."
+          & "C:\Program Files (x86)\WiX Toolset v3.14\bin\light.exe" `
+            -out "$msiPath" `
+            "$wixobjPath"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "light.exe failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          
+          if (-not (Test-Path $msiPath)) {
+            Write-Error "MSI file was not created"
+            exit 1
+          }
+          
+          Write-Host "✓ Installer created successfully: $msiPath"
+          $msiSize = (Get-Item $msiPath).Length / 1MB
+          Write-Host "Installer size: $($msiSize.ToString('F2')) MB"
+        shell: powershell
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: waviate-script-installer-${{ matrix.arch }}
+          path: WaviateScript-Installer.msi
+          retention-days: 30
+
+      - name: Create Release on tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: WaviateScript-Installer.msi
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up
+        if: always()
+        run: |
+          Remove-Item -Recurse -Force "installer_build" -ErrorAction SilentlyContinue
+          Remove-Item "*.wixobj" -ErrorAction SilentlyContinue
+          Remove-Item "*.wixpdb" -ErrorAction SilentlyContinue
+        shell: powershell
+

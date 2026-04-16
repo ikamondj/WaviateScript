@@ -1,3 +1,3 @@
 #include "NewFileTemplateGenerator.h"
 
-std::string NewFileTemplateGenerator::getDefaultFileSource() { return ""; }
+std::string NewFileTemplateGenerator::getDefaultFileSource() const { return ""; }

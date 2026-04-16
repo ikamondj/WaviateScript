@@ -28,6 +28,7 @@ class WaviateScriptAudioProcessor  : public juce::AudioProcessor
 public:
     //==============================================================================
     WaviateScriptAudioProcessor();
+    
     ~WaviateScriptAudioProcessor() override;
 
     //==============================================================================
@@ -66,20 +67,16 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
-    void processSegment(juce::AudioBuffer<float>& mainOut,
-        const juce::AudioBuffer<float>& mainIn,
-        const juce::AudioBuffer<float>* sideIn,
-        int startSample,
-        int numSamplesInSegment,
-        int numInputCh,
-        int numOutputCh);
     std::unique_ptr<WaviateSampleInput> wavInput;
     std::unordered_map<std::string, std::unique_ptr<AbstractCompiler>> compilers;
+    std::vector<std::vector<juce::MidiMessage>> midiBlockMessages;
+    juce::AudioVisualiserComponent visualizer;
 #ifdef WAV_SCRIPT_PREMIUM
     GameControllerInterface gameControllerInterface;
     SpscEventQueue<GameControllerEvent, cueCap, true> gamepadEventsQueue;
 #endif
 private:
+    void InitializeMidiMessageLookup(size_t blockSize);
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessor)
 };

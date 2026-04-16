@@ -1,58 +1,81 @@
 /*
   ==============================================================================
 
-    Simple JUCE plugin editor: top bar with Open button + current script name.
+    Professional JUCE plugin editor with toolbar, file menu, and keyboard shortcuts.
 
   ==============================================================================
 */
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "NewFileTemplateGenerator.h"
 
 //==============================================================================
 WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScriptAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p)
+    : AudioProcessorEditor(&p), audioProcessor(p), visualizer(p.visualizer)
 {
-    setSize(800, 600);
+    setSize(900, 700);
+    
+    // Setup toolbar
+    addAndMakeVisible(toolbar);
+    addKeyListener(this);
 
-    // Top bar container
-    addAndMakeVisible(topBar);
+    // File menu button
+    toolbar.addAndMakeVisible(fileMenuButton);
+    fileMenuButton.onClick = [this] { showFileMenu(); };
 
-    // New file buttons
-    topBar.addAndMakeVisible(newCButton);
-    newCButton.onClick = [this] { onNewCClicked(); };
+    // Help menu button
+    toolbar.addAndMakeVisible(helpMenuButton);
+    helpMenuButton.onClick = [this] { 
+        juce::PopupMenu helpMenu;
+        helpMenu.addItem(1, "About Waviate Script");
+        helpMenu.addItem(2, "Online Documentation");
+        helpMenu.addItem(3, "Keyboard Shortcuts");
+        
+        helpMenu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetComponent(&helpMenuButton),
+            [](int result) {
+                if (result == 1) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, 
+                        "About Waviate Script",
+                        "Waviate Script - Interactive Audio Plugin Editor\n\n"
+                        "Create and compile audio processing scripts in C, C++, and Rust.\n");
+                } else if (result == 2) {
+                    juce::URL("https://ikamondj.github.io/WaviateScript/#/").launchInDefaultBrowser();
+                } else if (result == 3) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                        "Keyboard Shortcuts",
+                        "Ctrl+N - New File\n"
+                        "Ctrl+O - Open File\n"
+                        "Ctrl+S - Save File\n"
+                        "Ctrl+Shift+S - Save As\n"
+                        "Ctrl+Enter - Compile\n");
+                }
+            });
+    };
 
-    topBar.addAndMakeVisible(newCppButton);
-    newCppButton.onClick = [this] { onNewCppClicked(); };
-#ifdef WAV_SCRIPT_PREMIUM
-    topBar.addAndMakeVisible(newRustButton);
-    newRustButton.onClick = [this] { onNewRustClicked(); };
-#endif
+    // File info label
+    addAndMakeVisible(currentFileLabel);
+    currentFileLabel.setText("No file loaded", juce::dontSendNotification);
+    currentFileLabel.setJustificationType(juce::Justification::centredLeft);
+    currentFileLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    currentFileLabel.setFont(juce::Font(12.0f));
+    currentFileLabel.setInterceptsMouseClicks(false, false);
 
-    // Open button
-    topBar.addAndMakeVisible(openButton);
-    openButton.onClick = [this] { onOpenClicked(); };
-
-    // Current script label
-    topBar.addAndMakeVisible(currentScriptLabel);
-    currentScriptLabel.setText("No script loaded", juce::dontSendNotification);
-    currentScriptLabel.setJustificationType(juce::Justification::centredLeft);
-    currentScriptLabel.setInterceptsMouseClicks(false, false);
-
-    // Code editor
+    // Code editor - pass processor for compilation
     addAndMakeVisible(codeEditor);
+    codeEditor.setProcessor(p);
 
-    // Empty state
+    // Empty state message
     addAndMakeVisible(emptyStateLabel);
     emptyStateLabel.setText(
         "Create a new file or open an existing one to start editing",
-        juce::dontSendNotification
-    );
+        juce::dontSendNotification);
     emptyStateLabel.setJustificationType(juce::Justification::centred);
     emptyStateLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
     emptyStateLabel.setFont(juce::Font(16.0f));
 
+    addAndMakeVisible(visualizer);
+    visualizer.setSamplesPerBlock(5);
     showEmptyState();
     resized();
 }
@@ -62,169 +85,292 @@ WaviateScriptAudioProcessorEditor::~WaviateScriptAudioProcessorEditor() = defaul
 //==============================================================================
 void WaviateScriptAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    // Background
-    g.fillAll(juce::Colours::black);
+    g.fillAll(juce::Colours::lightslategrey);
 }
 
 void WaviateScriptAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds();
 
-    // Top bar
-    topBar.setBounds(area.removeFromTop(topBarHeight));
+    auto toolbarArea = area.removeFromTop(toolbarHeight);
+    toolbar.setBounds(toolbarArea);
 
-    auto bar = topBar.getLocalBounds().reduced(8, 6);
+    {
+        auto toolbarBounds = toolbar.getLocalBounds().reduced(padding);
 
-    // Left: New file buttons
-    const int buttonW = 85;
-    const int spacing = 6;
+        fileMenuButton.setBounds(toolbarBounds.removeFromLeft(buttonWidth));
+        toolbarBounds.removeFromLeft(padding);
 
-    newCButton.setBounds(bar.removeFromLeft(buttonW));
-    bar.removeFromLeft(spacing);
+        helpMenuButton.setBounds(toolbarBounds.removeFromLeft(buttonWidth));
+        toolbarBounds.removeFromLeft(padding * 2);
 
-    newCppButton.setBounds(bar.removeFromLeft(buttonW));
-    bar.removeFromLeft(spacing);
-#ifdef WAV_SCRIPT_PREMIUM
-    newRustButton.setBounds(bar.removeFromLeft(buttonW));
-    bar.removeFromLeft(spacing);
-#endif
+        currentFileLabel.setBounds(toolbarBounds);
+    }
 
-    // Open button
-    openButton.setBounds(bar.removeFromLeft(buttonW));
-    bar.removeFromLeft(10);
+    auto editorArea = area.removeFromLeft(area.getWidth() * 3 / 4);
+    auto visualizerArea = area;
 
-    // Rest: current script name
-    currentScriptLabel.setBounds(bar);
-
-    // Code editor and empty state fill the remaining space
-    codeEditor.setBounds(area);
-    emptyStateLabel.setBounds(area);
+    codeEditor.setBounds(editorArea);
+    visualizer.setBounds(visualizerArea);
+    emptyStateLabel.setBounds(editorArea);
 }
 
 //==============================================================================
-void WaviateScriptAudioProcessorEditor::onNewCClicked()
+bool WaviateScriptAudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 {
-    const auto templateContent = cGen.getDefaultFileSource();
-    createNewFileWithTemplate(".wc", templateContent);
+    // Ctrl+N: New file
+    if (key.isKeyCode(juce::KeyPress::createFromDescription("ctrl+n").getKeyCode())) {
+        showNewFileMenu();
+        return true;
+    }
+    
+    // Ctrl+O: Open file
+    if (key.isKeyCode(juce::KeyPress::createFromDescription("ctrl+o").getKeyCode())) {
+        openFile();
+        return true;
+    }
+    
+    // Ctrl+S: Save file (or SaveAs if transient)
+    if (key.isKeyCode(juce::KeyPress::createFromDescription("ctrl+s").getKeyCode())) {
+        saveFile();
+        return true;
+    }
+    
+    // Ctrl+Shift+S: Save As
+    if (key.isKeyCode(juce::KeyPress::createFromDescription("ctrl+shift+s").getKeyCode())) {
+        saveFileAs();
+        return true;
+    }
+
+    return false;
 }
 
-void WaviateScriptAudioProcessorEditor::onNewCppClicked()
+//==============================================================================
+void WaviateScriptAudioProcessorEditor::showFileMenu()
 {
-    const auto templateContent = cppGen.getDefaultFileSource();
-    createNewFileWithTemplate(".wcpp", templateContent);
+    juce::PopupMenu fileMenu;
+    
+    fileMenu.addItem(1, "New", true);
+    fileMenu.addSeparator();
+    fileMenu.addItem(2, "Open...", true);
+    fileMenu.addSeparator();
+    fileMenu.addItem(3, "Save", currentScriptFile.existsAsFile() && isFileTransient);
+    fileMenu.addItem(4, "Save As...", currentScriptFile.existsAsFile());
+    fileMenu.addSeparator();
+    fileMenu.addItem(5, "Exit", true);
+
+    fileMenu.showMenuAsync(juce::PopupMenu::Options()
+        .withTargetComponent(&fileMenuButton),
+        [this](int result) {
+            switch (result) {
+                case 1: showNewFileMenu(); break;
+                case 2: openFile(); break;
+                case 3: saveFile(); break;
+                case 4: saveFileAs(); break;
+                case 5: juce::JUCEApplicationBase::quit(); break;
+            }
+        });
 }
+
+void WaviateScriptAudioProcessorEditor::showNewFileMenu()
+{
+    juce::PopupMenu newMenu;
+    
+    // C support
+    newMenu.addItem(1, "C File (.wc)", true);
+    
+    // C++ support
+    newMenu.addItem(2, "C++ File (.wcpp)", true);
+    
 #ifdef WAV_SCRIPT_PREMIUM
-void WaviateScriptAudioProcessorEditor::onNewRustClicked()
-{
-    const auto templateContent = rustGen.getDefaultFileSource();
-    createNewFileWithTemplate(".wrs", templateContent);
-}
+    // Rust support (premium only)
+    newMenu.addItem(3, "Rust File (.wrs)", true);
 #endif
-void WaviateScriptAudioProcessorEditor::createNewFileWithTemplate(const juce::String& fileExtension, const juce::String& templateContent)
-{
-    fileChooser = std::make_unique<juce::FileChooser>(
-        "Save New Waviate Script",
-        currentScriptFile.existsAsFile() ? currentScriptFile.getParentDirectory()
-        : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-        "*" + fileExtension
-    );
 
-    const auto flags = juce::FileBrowserComponent::saveMode
+    newMenu.showMenuAsync(juce::PopupMenu::Options()
+        .withTargetComponent(&fileMenuButton),
+        [this](int result) {
+            switch (result) {
+                case 1: createNewFile(".wc"); break;
+                case 2: createNewFile(".wcpp"); break;
+#ifdef WAV_SCRIPT_PREMIUM
+                case 3: createNewFile(".wrs"); break;
+#endif
+            }
+        });
+}
+
+void WaviateScriptAudioProcessorEditor::createNewFile(const juce::String& languageExtension)
+{
+    const auto templateContent = getTemplateForLanguage(languageExtension);
+    
+    fileChooser = std::make_unique<juce::FileChooser>(
+        "Create New " + getLanguageDisplayName(languageExtension),
+        getDefaultSaveDirectory(),
+        "*" + languageExtension);
+
+    const auto flags = juce::FileBrowserComponent::saveMode 
         | juce::FileBrowserComponent::canSelectFiles;
 
-    fileChooser->launchAsync(flags, [this, fileExtension, templateContent](const juce::FileChooser& chooser)
-        {
-            auto file = chooser.getResult();
-            fileChooser.reset();
-
-            if (!file.exists())
-                return;
-
-            // Ensure correct file extension
-            if (!file.getFileExtension().toLowerCase().startsWith("."))
-                file = file.withFileExtension(fileExtension);
-
-            // Write template to file
-            if (!file.replaceWithText(templateContent))
-            {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon,
-                    "Error",
-                    "Failed to create file: " + file.getFullPathName()
-                );
-                return;
-            }
-
-            isUnsavedNewFile = false;
-            setLoadedScriptFile(file);
-        });
-
-    // Show transient unsaved file state
-    isUnsavedNewFile = true;
-    currentScriptLabel.setText("• untitled" + fileExtension, juce::dontSendNotification);
-    codeEditor.ensureEditorCreated();
-    codeEditor.setText(templateContent);
-    codeEditor.setFileExtension(fileExtension);
-    hideEmptyState();
-    repaint();
+    fileChooser->launchAsync(flags, [this, languageExtension, templateContent](const juce::FileChooser& chooser) {
+        handleNewFileDialogResult(chooser, languageExtension, templateContent);
+    });
 }
 
-void WaviateScriptAudioProcessorEditor::onOpenClicked()
+void WaviateScriptAudioProcessorEditor::handleNewFileDialogResult(
+    const juce::FileChooser& chooser,
+    const juce::String& languageExtension,
+    const juce::String& templateContent)
+{
+    auto file = chooser.getResult();
+    fileChooser.reset();
+
+    if (!file.getFileName().isEmpty()) {
+        // Ensure correct file extension
+        if (!file.getFileExtension().equalsIgnoreCase(languageExtension)) {
+            file = file.getParentDirectory().getChildFile(file.getFileNameWithoutExtension() + languageExtension);
+        }
+
+        // Write template to file
+        if (file.replaceWithText(templateContent)) {
+            isFileTransient = false;
+            codeEditor.setLanguage(languageExtension);
+            loadScriptFile(file);
+        }
+    }
+}
+
+void WaviateScriptAudioProcessorEditor::openFile()
 {
     fileChooser = std::make_unique<juce::FileChooser>(
         "Open Waviate Script",
-        currentScriptFile.existsAsFile() ? currentScriptFile.getParentDirectory()
-        : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-        "*.wc;*.wcpp;*.wrs"
-    );
+        getDefaultSaveDirectory(),
+        "*.wc;*.wcpp;*.wrs");
 
     const auto flags = juce::FileBrowserComponent::openMode
         | juce::FileBrowserComponent::canSelectFiles;
 
-    fileChooser->launchAsync(flags, [this](const juce::FileChooser& chooser)
-        {
-            // If the editor is gone, JUCE won't call this, but keeping it simple:
-            auto file = chooser.getResult();
-
-            // Release chooser ASAP
-            fileChooser.reset();
-
-            if (!file.existsAsFile())
-                return;
-
-            const auto ext = file.getFileExtension().toLowerCase();
-            if (ext != ".wc" && ext != ".wcpp" && ext != ".wrs")
-                return;
-
-            setLoadedScriptFile(file);
-        });
+    fileChooser->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+        handleOpenFileDialogResult(chooser);
+    });
 }
 
-void WaviateScriptAudioProcessorEditor::setLoadedScriptFile(const juce::File& file)
+void WaviateScriptAudioProcessorEditor::handleOpenFileDialogResult(const juce::FileChooser& chooser)
 {
-    currentScriptFile = file;
-    isUnsavedNewFile = false;
+    auto file = chooser.getResult();
+    fileChooser.reset();
 
-    // Always-visible display name (just the filename)
-    currentScriptLabel.setText("Loaded: " + file.getFileName(), juce::dontSendNotification);
+    if (file.existsAsFile()) {
+        isFileTransient = false;
+        loadScriptFile(file);
+    }
+}
 
-    // Load file content into editor
-    if (file.existsAsFile())
-    {
-        const auto content = file.loadFileAsString();
-        codeEditor.ensureEditorCreated();
-        codeEditor.setText(content);
-        codeEditor.setFileExtension(file.getFileExtension());
-        hideEmptyState();
+void WaviateScriptAudioProcessorEditor::saveFile()
+{
+    // If file is transient (new, never saved), always do Save As
+    if (isFileTransient || !currentScriptFile.existsAsFile()) {
+        saveFileAs();
+        return;
     }
 
-    // If you want to notify the processor later, this is the hook:
-    // audioProcessor.loadScriptFile(file);
+    // Otherwise, save to current file
+    const auto fileContent = codeEditor.getText();
+    if (currentScriptFile.replaceWithText(fileContent)) {
+        isFileModified = false;
+        updateFileLabel();
+    }
+}
 
-    if (file.existsAsFile())
-        audioProcessor.loadProgram(currentScriptFile);
+void WaviateScriptAudioProcessorEditor::saveFileAs()
+{
+    // Use the language selected in CodeEditor to determine the extension
+    auto selectedLanguage = codeEditor.getLanguage();
+    auto saveDir = getDefaultSaveDirectory();
+    auto filename = currentScriptFile.getFileName();
+    
+    // Determine the suggested filename based on current file and language
+    if (filename.isEmpty()) {
+        filename = "untitled" + selectedLanguage;
+    } else {
+        // Replace extension with selected language extension
+        filename = currentScriptFile.getFileNameWithoutExtension() + selectedLanguage;
+    }
 
+    fileChooser = std::make_unique<juce::FileChooser>(
+        "Save Waviate Script As",
+        saveDir.getChildFile(filename),
+        "*" + selectedLanguage);
+
+    const auto flags = juce::FileBrowserComponent::saveMode
+        | juce::FileBrowserComponent::canSelectFiles;
+
+    fileChooser->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+        handleSaveFileDialogResult(chooser, false);
+    });
+}
+
+void WaviateScriptAudioProcessorEditor::handleSaveFileDialogResult(
+    const juce::FileChooser& chooser,
+    bool isNewFile)
+{
+    auto file = chooser.getResult();
+    fileChooser.reset();
+
+    if (!file.getFileName().isEmpty()) {
+        // Ensure the file has the correct extension based on selected language
+        auto selectedLanguage = codeEditor.getLanguage();
+        if (!file.getFileExtension().equalsIgnoreCase(selectedLanguage)) {
+            file = file.getParentDirectory().getChildFile(
+                file.getFileNameWithoutExtension() + selectedLanguage
+            );
+        }
+        
+        const auto fileContent = codeEditor.getText();
+        
+        if (file.replaceWithText(fileContent)) {
+            isFileTransient = false;
+            isFileModified = false;
+            currentScriptFile = file;
+            updateFileLabel();
+            
+            // Compile the file if it was successfully saved
+            audioProcessor.loadProgram(file);
+        }
+    }
+}
+
+void WaviateScriptAudioProcessorEditor::loadScriptFile(const juce::File& file)
+{
+    currentScriptFile = file;
+    isFileModified = false;
+
+    // Load file content into editor
+    if (file.existsAsFile()) {
+        auto fileContent = file.loadFileAsString();
+        codeEditor.setText(fileContent);
+        codeEditor.setLanguage(file.getFileExtension());
+        hideEmptyState();
+        
+        // Compile the loaded file
+        audioProcessor.loadProgram(file);
+    }
+
+    updateFileLabel();
     repaint();
+}
+
+void WaviateScriptAudioProcessorEditor::updateFileLabel()
+{
+    if (currentScriptFile.existsAsFile()) {
+        auto displayName = currentScriptFile.getFileName();
+        if (isFileTransient) {
+            displayName = "• " + displayName + " (unsaved)";
+        }
+        currentFileLabel.setText(displayName, juce::dontSendNotification);
+    } else {
+        currentFileLabel.setText("No file loaded", juce::dontSendNotification);
+    }
 }
 
 void WaviateScriptAudioProcessorEditor::showEmptyState()
@@ -237,4 +383,47 @@ void WaviateScriptAudioProcessorEditor::hideEmptyState()
 {
     emptyStateLabel.setVisible(false);
     codeEditor.setVisible(true);
+}
+
+//==============================================================================
+juce::String WaviateScriptAudioProcessorEditor::getTemplateForLanguage(
+    const juce::String& languageExtension) const
+{
+    if (languageExtension == ".wc") {
+        return cTemplateGen.getDefaultFileSource();
+    } else if (languageExtension == ".wcpp") {
+        return cppTemplateGen.getDefaultFileSource();
+    }
+#ifdef WAV_SCRIPT_PREMIUM
+    else if (languageExtension == ".wrs") {
+        return rustTemplateGen.getDefaultFileSource();
+    }
+#endif
+    
+    return "";
+}
+
+juce::String WaviateScriptAudioProcessorEditor::getLanguageDisplayName(
+    const juce::String& languageExtension) const
+{
+    if (languageExtension == ".wc") {
+        return "C File";
+    } else if (languageExtension == ".wcpp") {
+        return "C++ File";
+    }
+#ifdef WAV_SCRIPT_PREMIUM
+    else if (languageExtension == ".wrs") {
+        return "Rust File";
+    }
+#endif
+    
+    return "File";
+}
+
+juce::File WaviateScriptAudioProcessorEditor::getDefaultSaveDirectory() const
+{
+    if (currentScriptFile.existsAsFile()) {
+        return currentScriptFile.getParentDirectory().getFullPathName();
+    }
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
 }

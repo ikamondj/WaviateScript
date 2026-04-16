@@ -1,180 +1,235 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <atomic>
+#include <deque>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "AbstractCompiler.h"
 
-#include <clang/AST/Type.h>
-#include <clang/AST/ASTContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Function.h>
-#include "llvm/IR/ModuleSummaryIndex.h"
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/MCJIT.h>
-#include <llvm/ExecutionEngine/GenericValue.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Target/TargetMachine.h>
-//todo include llvm BackendUtil.h
-
+#include <clang/Basic/DiagnosticIDs.h>
+#include <clang/Basic/DiagnosticOptions.h>
+#include <clang/Basic/TargetOptions.h>
+#include <clang/CodeGen/CodeGenAction.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/CompilerInvocation.h>
+#include <clang/Frontend/FrontendOptions.h>
 #include <clang/Frontend/TextDiagnosticPrinter.h>
-#include <clang/Basic/DiagnosticOptions.h>
-#include <clang/CodeGen/CodeGenAction.h>
-#include <clang/Basic/TargetInfo.h>
-#include <clang/Basic/LLVM.h>
+#include <clang/Lex/PreprocessorOptions.h>
 
-
-#include <sstream>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/Support/TargetSelect.h>
 
 template <bool cppMode>
-class ClangCompiler : public AbstractCompiler {
+class ClangCompiler final : public AbstractCompiler {
 public:
-    void compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) override;
     ClangCompiler();
-    ~ClangCompiler();
+    ~ClangCompiler() = default;
+
+    void compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) override;
+
+    const void* getDispatchPtr() const noexcept {
+        return dispatch_.load(std::memory_order_acquire);
+    }
+
 private:
-    std::unique_ptr<llvm::ExecutionEngine> executionEngine;
-    std::unique_ptr<llvm::Module> currentModule;
+    struct Dispatch final {
+        SampleShader sample = nullptr;
+        FrequencyShader freq = nullptr;
+    };
+
+    struct CompiledUnit final {
+        std::unique_ptr<llvm::LLVMContext> ctx;
+        std::unique_ptr<llvm::ExecutionEngine> ee;
+        Dispatch dispatch{};
+    };
+
+    static constexpr size_t kKeepOldUnits = 4;
+
+    std::unique_ptr<CompiledUnit> active_;
+    std::deque<std::unique_ptr<CompiledUnit>> retired_;
+    std::atomic<const Dispatch*> dispatch_{ nullptr };
+
+    static std::string buildTranslationUnit(const std::string& userSource);
+    static void configureInvocation(std::shared_ptr <clang::CompilerInvocation>& inv, const char* virtualFilename);
+    static std::unique_ptr<llvm::Module> emitLLVMModule(
+        llvm::LLVMContext& ctx,
+        std::unique_ptr<llvm::MemoryBuffer> buffer
+    );
+
+    static std::unique_ptr<llvm::ExecutionEngine> buildJIT(std::unique_ptr<llvm::Module> m);
+    void retireOldActive();
 };
 
-// Template implementation
 template <bool cppMode>
-ClangCompiler<cppMode>::ClangCompiler()
-{
-    // Initialize LLVM JIT infrastructure
+ClangCompiler<cppMode>::ClangCompiler() {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
 }
 
 template <bool cppMode>
-ClangCompiler<cppMode>::~ClangCompiler() = default;
+std::string ClangCompiler<cppMode>::buildTranslationUnit(const std::string& userSource) {
+    std::string tu;
+    tu.reserve(userSource.size() + 512);
+
+    if constexpr (cppMode) {
+        tu.append(R"(#include "C:\Program Files\Waviate\Script\Include\Waviate.hpp")");
+        tu.append("\n\n");
+        tu.append(userSource);
+        tu.append("\n\n");
+        tu.append(R"(#include "C:\Program Files\Waviate\Script\Include\WaviateCppShim.hpp")");
+        tu.append("\n");
+    }
+    else {
+        tu.append(R"(#include "C:\Program Files\Waviate\Script\Include\Waviate.h")");
+        tu.append("\n\n");
+        tu.append(userSource);
+        tu.append("\n");
+    }
+
+    return tu;
+}
+
+template <bool cppMode>
+void ClangCompiler<cppMode>::configureInvocation(std::shared_ptr<clang::CompilerInvocation>& inv, const char* virtualFilename) {
+    inv = std::make_shared<clang::CompilerInvocation>();
+    inv->getTargetOpts().Triple = llvm::sys::getDefaultTargetTriple();
+
+    auto& fe = inv->getFrontendOpts();
+    fe.Inputs.clear();
+
+    clang::InputKind kind = cppMode
+        ? clang::InputKind(clang::Language::CXX)
+        : clang::InputKind(clang::Language::C);
+
+    fe.Inputs.emplace_back(virtualFilename, kind);
+    fe.DisableFree = false;
+
+    auto& lang = inv->getLangOpts();
+    if constexpr (cppMode) {
+        lang.CPlusPlus = true;
+        lang.CPlusPlus17 = true;
+    }
+    else {
+        lang.C99 = true;
+    }
+
+    auto& cg = inv->getCodeGenOpts();
+    cg.OptimizationLevel = 2;
+
+    auto& hs = inv->getHeaderSearchOpts();
+    hs.UseBuiltinIncludes = true;
+    hs.UseStandardSystemIncludes = false;
+    hs.UseStandardCXXIncludes = false;
+
+    hs.AddPath(R"(C:\Program Files\Waviate\Script\Include)", clang::frontend::System, false, false);
+}
+
+template <bool cppMode> 
+std::unique_ptr<llvm::Module> ClangCompiler<cppMode>::emitLLVMModule(
+    llvm::LLVMContext& ctx,
+    std::unique_ptr<llvm::MemoryBuffer> buffer
+) {
+    auto diagOpts = llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions>(new clang::DiagnosticOptions());
+    clang::TextDiagnosticPrinter diagClient(llvm::errs(), diagOpts.get());
+
+    clang::CompilerInstance ci;
+    std::shared_ptr<clang::CompilerInvocation> invNew;
+    const char* virtualFilename = cppMode ? "shader.cpp" : "shader.c";
+    configureInvocation(invNew, virtualFilename);
+    ci.setInvocation(invNew);
+    ci.createDiagnostics(&diagClient, false);
+    if (!ci.hasDiagnostics()) return nullptr;
+
+    ci.setTarget(clang::TargetInfo::CreateTargetInfo(ci.getDiagnostics(), ci.getInvocation().TargetOpts));
+    if (!ci.hasTarget()) return nullptr;
+
+    const auto& inputs = invNew->getFrontendOpts().Inputs;
+    if (inputs.empty()) return nullptr;
+
+    const std::string vFilename = inputs.front().getFile().str();
+
+    ci.createFileManager();
+    ci.createSourceManager(ci.getFileManager());
+
+    ci.getPreprocessorOpts().RetainRemappedFileBuffers = true;
+    ci.getPreprocessorOpts().addRemappedFile(vFilename, buffer.release());
+
+    clang::EmitLLVMOnlyAction action(&ctx);
+    if (!ci.ExecuteAction(action)) return nullptr;
+
+    return action.takeModule();
+}
+
+template <bool cppMode>
+std::unique_ptr<llvm::ExecutionEngine> ClangCompiler<cppMode>::buildJIT(std::unique_ptr<llvm::Module> m) {
+    if (!m) return nullptr;
+
+    std::string err;
+    llvm::ExecutionEngine* raw = llvm::EngineBuilder(std::move(m))
+        .setEngineKind(llvm::EngineKind::JIT)
+        .setErrorStr(&err)
+        .create();
+
+    if (!raw) return nullptr;
+
+    return std::unique_ptr<llvm::ExecutionEngine>(raw);
+}
+
+template <bool cppMode>
+void ClangCompiler<cppMode>::retireOldActive() {
+    if (active_) {
+        retired_.push_back(std::move(active_));
+        while (retired_.size() > kKeepOldUnits) {
+            retired_.pop_front();
+        }
+    }
+}
 
 template <bool cppMode>
 void ClangCompiler<cppMode>::compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) {
-    // Initialize output to nullptr
     outSample = nullptr;
     outFrequency = nullptr;
 
-    try {
-        // Prepend include directive
-        std::string sourceWithInclude = (cppMode ? R"(
-#include "WaviateInput.hpp"
+    dispatch_.store(nullptr, std::memory_order_release);
 
-)" : R"(
-#include "WaviateInput.h"
+    const char* virtualFilename = cppMode ? "shader.cpp" : "shader.c";
+    const std::string tu = buildTranslationUnit(source);
 
-)") + source;
+    auto unit = std::make_unique<CompiledUnit>();
+    unit->ctx = std::make_unique<llvm::LLVMContext>();
 
-        // Create LLVM context
-        auto LLVMCtx = std::make_unique<llvm::LLVMContext>();
-
-        // Setup Clang diagnostics
-        auto DiagOpts = llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions>(new clang::DiagnosticOptions());
-        clang::TextDiagnosticPrinter DiagClient(llvm::errs(), DiagOpts.get());
-        auto DiagID = llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs>(new clang::DiagnosticIDs());
-        clang::DiagnosticsEngine Diags(DiagID, DiagOpts, &DiagClient);
-
-        // Create and configure compiler invocation
-        auto Invocation = std::make_shared<clang::CompilerInvocation>();
-
-        // Setup basic compiler options
-        clang::CompilerInvocation::CreateFromArgs(
-            *Invocation,
-            {},
-            Diags
-        );
-
-        // Set language and mode
-        if (cppMode) {
-            Invocation->getLangOpts().CPlusPlus = true;
-        }
-        Invocation->getCodeGenOpts().OptimizationLevel = 2;
-
-        // Setup include paths to find WaviateInput.h
-        auto& HeaderOpts = Invocation->getHeaderSearchOpts();
-        HeaderOpts.AddPath("Source", clang::frontend::System, false, false);
-        HeaderOpts.AddPath(".", clang::frontend::System, false, false);
-
-        // Create compiler instance
-        clang::CompilerInstance Compiler;
-        Compiler.setInvocation(Invocation);
-        Compiler.createDiagnostics(&DiagClient, false);
-
-        // Set target
-        if (!Compiler.hasTarget()) {
-            if (!Compiler.createTarget()) {
-                return;
-            }
-        }
-
-        // Create memory buffer from source code
-        llvm::StringRef SourceCode(sourceWithInclude);
-        auto Buffer = llvm::MemoryBuffer::getMemBufferCopy(
-            SourceCode,
-            cppMode ? "shader.cpp" : "shader.c"
-        );
-
-        if (!Buffer) {
-            return;
-        }
-
-        // Create input file
-        auto FileEntry = Compiler.getFileManager().getVirtualFileRef(
-            cppMode ? "shader.cpp" : "shader.c",
-            Buffer->getBufferSize(),
-            0
-        );
-
-        // Create code gen action with required constructor arguments
-        clang::EmitLLVMOnlyAction action(LLVMCtx.get());
+    auto buffer = llvm::MemoryBuffer::getMemBufferCopy(tu, virtualFilename);
+    if (!buffer) return;
 
 
-        // Perform compilation
-        if (!Compiler.ExecuteAction(action)) {
-            return;
-        }
+    auto module = emitLLVMModule(*unit->ctx, std::move(buffer));
+    if (!module) return;
 
-        // Get the generated LLVM module
-        std::unique_ptr<llvm::Module> Module = action.takeModule();
-        if (!Module) {
-            return;
-        }
+    unit->ee = buildJIT(std::move(module));
+    if (!unit->ee) return;
 
-        // Create execution engine
-        std::string ErrStr;
-        llvm::ExecutionEngine* EE = llvm::EngineBuilder(std::move(Module))
-            .setEngineKind(llvm::EngineKind::JIT)
-            .setErrorStr(&ErrStr)
-            .create();
+    unit->ee->finalizeObject();
 
-        if (!EE) {
-            return;
-        }
+    const uint64_t sampleAddr = unit->ee->getFunctionAddress("sample_process");
+    const uint64_t freqAddr = unit->ee->getFunctionAddress("frequency_process");
 
-        // Store the execution engine
-        executionEngine.reset(EE);
+    unit->dispatch.sample = sampleAddr ? reinterpret_cast<SampleShader>(sampleAddr) : nullptr;
+    unit->dispatch.freq = freqAddr ? reinterpret_cast<FrequencyShader>(freqAddr) : nullptr;
 
-        // Finalize object code for execution
-        executionEngine->finalizeObject();
+    outSample = unit->dispatch.sample;
+    outFrequency = unit->dispatch.freq;
 
-        // Look up and get function addresses
-        uint64_t SampleAddr = executionEngine->getFunctionAddress("sample_process");
-        if (SampleAddr != 0) {
-            outSample = reinterpret_cast<SampleShader>(SampleAddr);
-        }
+    retireOldActive();
+    active_ = std::move(unit);
 
-        uint64_t FrequencyAddr = executionEngine->getFunctionAddress("frequency_process");
-        if (FrequencyAddr != 0) {
-            outFrequency = reinterpret_cast<FrequencyShader>(FrequencyAddr);
-        }
-
-    }
-    catch (...) {
-        // If any exception occurs, ensure outputs are nullptrs
-        outSample = nullptr;
-        outFrequency = nullptr;
-    }
+    dispatch_.store(&active_->dispatch, std::memory_order_release);
 }

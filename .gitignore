@@ -1,1 +1,5 @@
 /Builds
+/installer_build
+*.msi
+*.wixobj
+*.wixpdb

@@ -1,8 +1,8 @@
 #pragma once
 #include <string>
-#include <JuceHeader.h>
+
 typedef float (*SampleShader)(const struct WaviateSampleInput*, struct WaviateSampleStateWriter*);
-typedef float (*FrequencyShader)(const struct WaviateFrequencyInput*, struct WaviateFrequencyStateWriter*);
+typedef struct WaviateComplex (*FrequencyShader)(const struct WaviateFrequencyInput*, struct WaviateFrequencyStateWriter*);
 
 class AbstractCompiler {
 

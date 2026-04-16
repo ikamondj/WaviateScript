@@ -12,5 +12,5 @@
 #include <string>
 class NewFileTemplateGenerator {
 public:
-    virtual std::string getDefaultFileSource();
+    virtual std::string getDefaultFileSource() const;
 };

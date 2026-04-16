@@ -12,9 +12,8 @@
 #pragma once
 struct WaviateSampleInput {
     uint64_t samplesSinceAppStart;
-    int32_t positionInBlock;
+    int32_t sampleInBlock;
     int32_t blockSize;
-    int32_t midiSegmentSize;
     int32_t inputChannelCount;
     int32_t sideChainChannelCount;
     int32_t sampleMemoryCount;
@@ -26,6 +25,8 @@ struct WaviateSampleInput {
     uint64_t* sampleWhenMidiNoteOn;
     uint64_t* sampleWhenMidiNoteOff;
     uint64_t* sampleWhenCCValueChanged;
+    bool sustain;
+    bool* sustainDefer;
 
     int32_t controllerCount;
     uint64_t* controllerButtonMask;
@@ -46,10 +47,23 @@ struct WaviateSampleStateWriter {
 
 };
 
+struct WaviateComplex {
+    float real;
+    float imag;
+};
+
 struct WaviateFrequencyInput {
+    int32_t sampleWidth;
+    int32_t bin;
+    int32_t totalBinCount;
+    int32_t channelCount;
+    uint8_t channel;
 
+    const WaviateComplex** currentFrequencyData;
+    const WaviateComplex** inputDeviceData;
+    const WaviateComplex** inputSideChainFrequencyData;
+
+    float sampleRate;
+    uint64_t samplesSinceAppStart;
 };
 
-struct WaviateFrequencyStateWriter {
-
-};
