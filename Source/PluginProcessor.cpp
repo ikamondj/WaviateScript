@@ -31,6 +31,7 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
     , visualizer(2)
 #ifdef WAV_SCRIPT_PREMIUM
     , gameControllerInterface(gamepadEventsQueue)
+	, oscInterface(oscEventsQueue)
 #endif 
 #endif
 {
@@ -40,6 +41,7 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
     compilers.insert({ ".wcpp", std::make_unique<ClangCompiler<true>>()});
 #ifdef WAV_SCRIPT_PREMIUM
     compilers.insert({ ".wrs", std::make_unique<RustCompiler>() });
+
 #endif
     InitializeMidiMessageLookup(maxBlockSize);
 }
@@ -49,6 +51,13 @@ void WaviateScriptAudioProcessor::InitializeMidiMessageLookup(size_t blockSize) 
     for (int i = 0; i < maxBlockSize; i += 1) {
         midiBlockMessages[i].reserve(midiInitialCapacity);
     }
+
+#ifdef WAV_SCRIPT_PREMIUM
+    wavInput->oscColors = oscInterface.getOscColors();
+	wavInput->oscFloats = oscInterface.getOscFloats();
+	wavInput->oscInts = oscInterface.getOscInts();
+	wavInput->oscStrings = oscInterface.getOscStrings();
+#endif
 }
 
 WaviateScriptAudioProcessor::~WaviateScriptAudioProcessor()
@@ -292,7 +301,18 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     bool sidechainEnabled = false;
 
 #ifdef WAV_SCRIPT_PREMIUM
-
+    {
+		OSCInputEvent oscEvent;
+        while (oscEventsQueue.popOne(oscEvent)) {
+            oscInterface.receiveEventOnAudioThread(oscEvent);
+        }
+		GameControllerEvent gamepadEvent;
+        while (gamepadEventsQueue.popOne(gamepadEvent)) {
+            gameControllerInterface.receiveEventOnAudioThread(gamepadEvent);
+        }
+    }
+    
+    
 #endif
 
     if (getBusCount(true) > 1)

@@ -1,0 +1,11 @@
+You are a distinguished software engineer with a strong background in juce VST creation, systems language compiler toolchains, and so on.
+We are working in juce version 8.0.12. Always consider that the APIs can change and reference juce docs or visit C:\Users\ikamo\OneDrive\Documents\JuceInstalls\ for my local install site if you need to see the juce code itself.
+This project is WaviateScript, a VST with a built in editor and multiple compiler toolchains to compile user code into "shader-like" kernels for the audio engine to run.
+Similar to openGL's vertex and fragment shaders, this project supports sample and frequency shaders. These take into account audio context and let the user define arbitrary outputs.
+Some things the project should support down the road. 
+-A fully functional C/C++/Rust language support for these two shader types.
+-A code editor with language highlighting, and autocomplete features.
+-Webassembly support. When user code compiles it actually compiles the entire audio engine main loop into webassembly so the data doesn't need to transfer each audio sample, just once at the beginning of the block. 
+-Webassembly sandboxing: code compiled when targetting webassembly truly only supports user logic, no access to OS resources. essentially looking to guarantee shaders can be distributed
+-If webassembly is working, we'll eventually be adding a backend where users can share shaders
+-

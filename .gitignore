@@ -1,4 +1,8 @@
 /Builds
+/AgentWorkflows/todo
+/Source/DDRDownloader
+/Source/WSPremium
+/Source/DDRDownloader/DDR
 /installer_build
 *.msi
 *.wixobj

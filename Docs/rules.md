@@ -82,45 +82,8 @@ WaviateScript will skip that stage.
 
 If frequency_process is missing, the engine may skip FFT entirely (preserving performance and sample-accurate pass-through).
 
-
-## 4) Execution order rules
-### 4.1 Primary rule: order in entry file
-
-If WaviateScript can see both definitions in the entry file text, then:
-
-The function defined first in the entry file runs first.
-
-The function defined second runs second.
-
-This is based on a simple text search match. If the first appearance of "frequency_process("
- appears before the first of "sample_process(" as an exact text match within the file, that will determine the execution order. This means function definitions can be declared in included files, and a user can actually use function declarations or even comments in the entry file text to define the order. 
-
-### 4.2 Fallback rule: default order
-
-If both frequency and sample shaders are defined and WaviateScript cannot determine order because:
-
-#### 4.2.1: One or both function bodies are defined in headers / other files only
-
-#### 4.2.2: No text match from section 4.1 appears in the entry file
-
-#### 4.2.3: Macros obscure the function body such that it is not parseable
-
-…then WaviateScript defaults to:
-
-sample_process first
-
-frequency_process second
-
-### 4.3 Practical guidance
-
-If you care about custom order:
-
-Put the actual function bodies in the entry file, in the order you want.
-
-Keep wrappers thin and obvious.
-
-## 5) Includes / modules / project layout
-### 5.1 C and C++
+## 4) Includes / modules / project layout
+### 4.1 C and C++
 
 Supported by default:
 
@@ -138,7 +101,7 @@ Custom include directories passed by user configuration. Linking external third-
 
 You are responsible for include guards or #pragma once in your headers.
 
-### 5.2 Rust (idiomatic structure without boilerplate)
+### 4.2 Rust (idiomatic structure without boilerplate)
 
 Rust does not have headers. Use modules.
 
@@ -157,8 +120,8 @@ mod helpers; // loads helpers.rs in the same folder
 
 No Cargo project required. No forced main.rs naming. Your entry file can be descriptively named.
 
-## 6) Pass-through expectations
-### 6.1 “No-op” shader
+## 5) Pass-through expectations
+### 5.1 “No-op” shader
 
 A no-op implementation should behave as pass-through:
 
@@ -166,7 +129,7 @@ In sample stage: write outputs equivalent to inputs.
 
 In frequency stage: if bins are unmodified, the stage should not introduce audible artifacts if the engine bypasses FFT when frequency stage is absent.
 
-### 6.2 FFT windowing note
+### 5.2 FFT windowing note
 
 If the engine performs windowed STFT/overlap-add, then a frequency stage that runs (even pass-through) may still slightly shape audio. If sample-accurate pass-through is required, the recommended behavior is:
 
@@ -176,8 +139,8 @@ If frequency_process is present → accept that windowing/OLA may affect samples
 
 (Exact FFT policy is engine-defined and configurable; the rule here is about what authors should expect.)
 
-## 7) Compilation rules (default toolchain)
-### 7.1 Output formats
+## 6) Compilation rules (default toolchain)
+### 6.1 Output formats
 
 Depending on platform/toolchain, the output may be:
 
@@ -189,7 +152,7 @@ These formats are handled internally within the engine's toolchain, so users sho
 
 As a project stretch goal, users may be able to package files to encrypted web-assembly with shader usage metadata. This allows safe sandboxed code execution and opens the door for an instrument/shader marketplace
 
-### 7.2 No-config defaults
+### 6.2 No-config defaults
 
 Default pipeline aims for “drop in a file and compile”:
 
@@ -207,7 +170,7 @@ Includes sibling modules via mod
 
 No external crates unless explicitly allowed by the toolchain tier
 
-### 7.3 Determinism requirements
+### 6.3 Determinism requirements
 
 Do not rely on:
 
