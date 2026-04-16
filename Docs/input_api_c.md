@@ -58,7 +58,7 @@ Number of samples in the current processing block.
 ---
 
 ### `currentSampleData` (`float**`)
-Audio buffer containing sample output data for each channel at the current shader state of execution. If the sample shader is executing first, it will initialize with all zeroes. If the sample shader executes after a frequency shader, this will be populated with the sample output of the frequency shader step. Indexed as `[outputChannel][sampleIndex]` with dimensions `outputChannelCount × blockSize`.
+Audio buffer containing sample output data for each channel at the current sample-stage state of execution. Because the sample shader always runs before the frequency shader within a plugin instance, this buffer initializes with all zeroes at the start of the sample stage. It does not contain output from a frequency shader in the same plugin instance. Indexed as `[outputChannel][sampleIndex]` with dimensions `outputChannelCount × blockSize`.
 
 ---
 

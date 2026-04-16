@@ -20,7 +20,7 @@ You provide exactly **one** entry file to WaviateScript:
 - C++: `*.cpp`, `*.cc`, or `*.cxx`
 - Rust: `*.rs`
 
-WaviateScript only *parses* this entry file to infer execution order (see section 4). Your entry file may include or reference other files (see section 5), but order inference is entry-file-only.
+WaviateScript only *parses* this entry file to detect exported shader functions. Your entry file may include or reference other files, but function detection is entry-file-only.
 
 ### 1.2 Required exported symbol names
 The shader functions must be named **exactly**:
@@ -82,8 +82,20 @@ WaviateScript will skip that stage.
 
 If frequency_process is missing, the engine may skip FFT entirely (preserving performance and sample-accurate pass-through).
 
-## 4) Includes / modules / project layout
-### 4.1 C and C++
+## 4) Execution order
+
+Stage order is not configurable within a single plugin instance.
+
+If only `sample_process` is present, WaviateScript runs the sample stage.
+
+If only `frequency_process` is present, WaviateScript runs the frequency stage.
+
+If both `sample_process` and `frequency_process` are present, WaviateScript always runs `sample_process` first and `frequency_process` second.
+
+Function declaration order, compiler symbol order, linker order, source file layout, and shader configuration do not change this stage order.
+
+## 5) Includes / modules / project layout
+### 5.1 C and C++
 
 Supported by default:
 
@@ -101,7 +113,7 @@ Custom include directories passed by user configuration. Linking external third-
 
 You are responsible for include guards or #pragma once in your headers.
 
-### 4.2 Rust (idiomatic structure without boilerplate)
+### 5.2 Rust (idiomatic structure without boilerplate)
 
 Rust does not have headers. Use modules.
 
@@ -120,8 +132,8 @@ mod helpers; // loads helpers.rs in the same folder
 
 No Cargo project required. No forced main.rs naming. Your entry file can be descriptively named.
 
-## 5) Pass-through expectations
-### 5.1 “No-op” shader
+## 6) Pass-through expectations
+### 6.1 “No-op” shader
 
 A no-op implementation should behave as pass-through:
 
@@ -129,7 +141,7 @@ In sample stage: write outputs equivalent to inputs.
 
 In frequency stage: if bins are unmodified, the stage should not introduce audible artifacts if the engine bypasses FFT when frequency stage is absent.
 
-### 5.2 FFT windowing note
+### 6.2 FFT windowing note
 
 If the engine performs windowed STFT/overlap-add, then a frequency stage that runs (even pass-through) may still slightly shape audio. If sample-accurate pass-through is required, the recommended behavior is:
 
@@ -139,8 +151,8 @@ If frequency_process is present → accept that windowing/OLA may affect samples
 
 (Exact FFT policy is engine-defined and configurable; the rule here is about what authors should expect.)
 
-## 6) Compilation rules (default toolchain)
-### 6.1 Output formats
+## 7) Compilation rules (default toolchain)
+### 7.1 Output formats
 
 Depending on platform/toolchain, the output may be:
 
@@ -152,7 +164,7 @@ These formats are handled internally within the engine's toolchain, so users sho
 
 As a project stretch goal, users may be able to package files to encrypted web-assembly with shader usage metadata. This allows safe sandboxed code execution and opens the door for an instrument/shader marketplace
 
-### 6.2 No-config defaults
+### 7.2 No-config defaults
 
 Default pipeline aims for “drop in a file and compile”:
 
@@ -170,7 +182,7 @@ Includes sibling modules via mod
 
 No external crates unless explicitly allowed by the toolchain tier
 
-### 6.3 Determinism requirements
+### 7.3 Determinism requirements
 
 Do not rely on:
 

@@ -12,7 +12,7 @@ The project is designed around a shared ABI-level contract. Audio shaders are au
 ### Shader Language Information
 The core guiding principle of waviate script is to write shader-like code to process and output audio signals. If you aren't familiar with the graphics world, shader code is a common function interface that acts, say, per pixel or per geometric point. The arguments to the function carry data about the context of the function call (like enough information to know which pixel you're operating on) and the system automatically renders graphics at each pixel based on your function's output. Think of it as a function mapping your pixel coordinate to a color. 
 
-Similarly, waviate flow acts on audio samples and frequency bins. You can define a function and it will have a context input describing a large amount of context: "what audio sample am I on? How long has the app been running in seconds? Is a certain midi note currently being pressed?" are just a few examples. Waviate flow then processes your logic and plays back in real-time or records in an offline rendering mode. These functions can process per sample, per frequency bin, or both in either order.
+Similarly, waviate flow acts on audio samples and frequency bins. You can define a function and it will have a context input describing a large amount of context: "what audio sample am I on? How long has the app been running in seconds? Is a certain midi note currently being pressed?" are just a few examples. Waviate flow then processes your logic and plays back in real-time or records in an offline rendering mode. These functions can process per sample, per frequency bin, or both.
 
 ### Note about shader domains
 -Per-sample functions are sample-accurate and local.
