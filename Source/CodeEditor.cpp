@@ -64,7 +64,7 @@ void CodeEditor::ensureEditorCreated()
     editor = std::make_unique<juce::CodeEditorComponent>(document, &tokeniser);
     
     editor->setTabSize(4, true);
-    editor->setFont(juce::Font(14.0f));
+    editor->setFont(createCodeEditorFont());
     editor->setLineNumbersShown(true);
     editor->setColour(juce::CodeEditorComponent::backgroundColourId, 
                       juce::Colours::lightslategrey.brighter());
@@ -80,6 +80,22 @@ void CodeEditor::ensureEditorCreated()
     addAndMakeVisible(*editor);
     editor->addKeyListener(this);
     layoutEditorArea();
+}
+
+juce::Font CodeEditor::createCodeEditorFont() const
+{
+    juce::Font font { withDefaultMetrics(juce::FontOptions { codeFontHeight, juce::Font::plain }) };
+    font.setTypefaceName(juce::Font::getDefaultMonospacedFontName());
+
+    juce::StringArray fallbackFonts;
+    fallbackFonts.add("Cascadia Mono");
+    fallbackFonts.add("Consolas");
+    fallbackFonts.add("Menlo");
+    fallbackFonts.add("Monaco");
+    fallbackFonts.add("Courier New");
+    font.setPreferredFallbackFamilies(fallbackFonts);
+
+    return font;
 }
 
 //==============================================================================

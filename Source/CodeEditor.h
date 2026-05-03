@@ -104,6 +104,7 @@ private:
     // UI Layout helpers
     void layoutEditorArea();
     void layoutStatusBar();
+    juce::Font createCodeEditorFont() const;
     
     // Compilation
     void performCompilation();
@@ -131,6 +132,7 @@ private:
     // ===== State =====
     juce::String currentLanguage = ".wcpp";  // Default to C++
     bool isLogExpanded = false;
+    static constexpr float codeFontHeight = 14.0f;
     static constexpr int collapsedStatusBarHeight = 28;
     static constexpr int expandedLogHeight = 120;
 
