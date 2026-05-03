@@ -1,4 +1,4 @@
-name: Build Public Installers
+name: Build Premium Installers
 
 on:
   workflow_dispatch:
@@ -16,16 +16,24 @@ on:
 env:
   BUILD_TYPE: Release
   JUCE_TAG: 8.0.12
+  PREMIUM_SOURCE_DIR: premium-source
 
 jobs:
   windows:
-    name: Windows public installer
+    name: Windows premium installer
     runs-on: windows-latest
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'windows' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Checkout WSPremium source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.WAVIATESCRIPT_PREMIUM_REPOSITORY }}
+          token: ${{ secrets.WAVIATESCRIPT_PREMIUM_TOKEN }}
+          path: ${{ env.PREMIUM_SOURCE_DIR }}
 
       - name: Configure MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -47,6 +55,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
             -DWAVIATESCRIPT_JUCE_TAG="$env:JUCE_TAG" `
+            -DWAVIATESCRIPT_PREMIUM=ON `
+            -DWAVIATESCRIPT_PREMIUM_SOURCE_DIR="$env:GITHUB_WORKSPACE\$env:PREMIUM_SOURCE_DIR" `
             -DWAVIATESCRIPT_FFTW_DIR="$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows" `
             -DLLVM_DIR="$env:ProgramFiles\LLVM\lib\cmake\llvm" `
             -DClang_DIR="$env:ProgramFiles\LLVM\lib\cmake\clang"
@@ -63,23 +73,30 @@ jobs:
             -OutputDir dist `
             -Configuration $env:BUILD_TYPE `
             -Version "1.0.0" `
-            -Edition Public
+            -Edition Premium
 
-      - name: Upload Windows installer
+      - name: Upload Windows premium installer
         uses: actions/upload-artifact@v4
         with:
-          name: waviate-script-windows-installer
-          path: dist/WaviateScript-1.0.0-windows.msi
+          name: waviate-script-premium-windows-installer
+          path: dist/WaviateScript-Premium-1.0.0-windows.msi
           if-no-files-found: error
 
   macos:
-    name: macOS public installer
+    name: macOS premium installer
     runs-on: macos-latest
     if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Checkout WSPremium source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.WAVIATESCRIPT_PREMIUM_REPOSITORY }}
+          token: ${{ secrets.WAVIATESCRIPT_PREMIUM_TOKEN }}
+          path: ${{ env.PREMIUM_SOURCE_DIR }}
 
       - name: Install build dependencies
         run: brew install ninja llvm fftw
@@ -89,6 +106,8 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             -DWAVIATESCRIPT_JUCE_TAG="$JUCE_TAG" \
+            -DWAVIATESCRIPT_PREMIUM=ON \
+            -DWAVIATESCRIPT_PREMIUM_SOURCE_DIR="$GITHUB_WORKSPACE/$PREMIUM_SOURCE_DIR" \
             -DWAVIATESCRIPT_FFTW_DIR="$(brew --prefix fftw)" \
             -DLLVM_DIR="$(brew --prefix llvm)/lib/cmake/llvm" \
             -DClang_DIR="$(brew --prefix llvm)/lib/cmake/clang"
@@ -103,11 +122,11 @@ jobs:
             --output-dir dist \
             --configuration "$BUILD_TYPE" \
             --version "1.0.0" \
-            --edition Public
+            --edition Premium
 
-      - name: Upload macOS installer
+      - name: Upload macOS premium installer
         uses: actions/upload-artifact@v4
         with:
-          name: waviate-script-macos-installer
-          path: dist/WaviateScript-1.0.0-macos.pkg
+          name: waviate-script-premium-macos-installer
+          path: dist/WaviateScript-Premium-1.0.0-macos.pkg
           if-no-files-found: error

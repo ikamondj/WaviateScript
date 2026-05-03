@@ -158,8 +158,20 @@ Do not include any extra sections before or after this format.
 Write-Host "Running Codex for task: $todoFileName"
 
 $codexCommand = Resolve-CodexCommand
-$codexOutput = $prompt | & $codexCommand exec --color never - 2>&1 | Out-String
-$codexExitCode = $LASTEXITCODE
+$previousErrorActionPreference = $ErrorActionPreference
+
+try {
+    $ErrorActionPreference = "Continue"
+    $codexOutput = $prompt |
+        & $codexCommand exec --color never - 2>&1 |
+        ForEach-Object { $_.ToString() } |
+        Out-String
+    $codexExitCode = $LASTEXITCODE
+}
+finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+
 
 if ($codexExitCode -ne 0) {
     Write-Host $codexOutput

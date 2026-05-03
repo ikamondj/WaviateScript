@@ -96,6 +96,9 @@ private:
 
     CfileTemplateGenerator cTemplateGen;
     CppFileTemplateGenerator cppTemplateGen;
+#ifdef WAV_SCRIPT_PREMIUM
+    RustFileTemplateGenerator rustTemplateGen;
+#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaviateScriptAudioProcessorEditor)
 };
