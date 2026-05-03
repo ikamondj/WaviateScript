@@ -1,0 +1,54 @@
+Task: Split build, installer, and CI support into public/non-premium and private/premium variants.
+
+Depends on:
+01_SetupCMakeBuild.todo, 02_CreateInstallers.todo, and 03_BuildInstallerGithubAction.todo should be complete, or equivalent CMake, installer, and GitHub Actions infrastructure must already exist.
+
+Background:
+The public project and the WSPremium code should be separable. WSPremium lives in a private repo while the rest of WaviateScript can be public. The build system must understand both products without making the public repo depend on private source. Use Source/WSPremium/WSPremium.jucer as the current local reference for how WSPremium works, but do not require Projucer for the build.
+
+Requirements:
+- Read the current project structure before editing:
+  - WaviateScript.jucer for the public plugin source/module list.
+  - Source/WSPremium/WSPremium.jucer for the premium static library source/module list.
+  - Source/PluginProcessor.* and Source/PluginEditor.* for WAV_SCRIPT_PREMIUM behavior.
+  - Source/Compilers.h, Source/RustCompiler.*, Source/WSPremium/RustCompiler.*, Source/WSPremium/RustFileTemplateGenerator.*, and premium OSC/game controller files.
+- Update CMake so it covers WSPremium.jucer at this stage:
+  - Treat WSPremium.jucer as the source of truth for the premium library files to transcribe into CMake.
+  - Build a WSPremium static library target when premium source is available.
+  - Link the premium library into the WaviateScript plugin when WAVIATESCRIPT_PREMIUM=ON.
+  - Define WAV_SCRIPT_PREMIUM=1 only for premium builds.
+  - Include premium headers and JUCE modules listed by WSPremium.jucer, including juce_dsp and juce_osc.
+  - Keep non-premium builds working when Source/WSPremium is missing.
+- Add a clear private-source input for local/CI premium builds, such as WAVIATESCRIPT_PREMIUM_SOURCE_DIR.
+  - Default it to Source/WSPremium only if that folder exists.
+  - If WAVIATESCRIPT_PREMIUM=ON and the premium source dir is missing, fail with a helpful message.
+  - Do not add private repo URLs or secrets to public files.
+- Create separate installer flows for public and premium products, based on the installer scripts already in the project:
+  - Public installer names should clearly identify the non-premium build, for example WaviateScript-1.0.0-windows.msi and WaviateScript-1.0.0-macos.pkg.
+  - Premium installer names should clearly identify premium, for example WaviateScript-Premium-1.0.0-windows.msi and WaviateScript-Premium-1.0.0-macos.pkg.
+  - Use separate WiX product/upgrade identifiers for public and premium if they should install side by side. If they should replace each other, document that decision explicitly.
+  - Keep the standard install destinations for Standalone and VST3 on Windows and macOS.
+- Create separate GitHub Actions workflows for public and premium builds, based on the workflow already in the project:
+  - Public workflow: must not fetch or require WSPremium and should be safe for a public repo.
+  - Premium workflow: should run only where private repo access is configured.
+  - Use repository secrets or actions/checkout configuration to fetch the WSPremium private repo into the path consumed by WAVIATESCRIPT_PREMIUM_SOURCE_DIR.
+  - Keep the same workflow_dispatch platform dropdown pattern: all, windows, macos.
+  - Keep Windows and macOS jobs parallel when platform=all.
+  - Upload separate public and premium installer artifacts with unambiguous names.
+- Document local commands for both products:
+  - Public CMake configure/build/package.
+  - Premium CMake configure/build/package with WAVIATESCRIPT_PREMIUM=ON and a premium source path.
+  - Required CI secrets or private checkout setup for the premium workflow.
+
+Acceptance criteria:
+- A public checkout without WSPremium can configure, build, package, and run the public installer workflow without private files.
+- A checkout or CI run with WSPremium available can configure, build, package, and run the premium installer workflow.
+- CMake builds the WSPremium static library from the files represented by Source/WSPremium/WSPremium.jucer instead of using generated Visual Studio files.
+- Public and premium installer artifacts are separate and cannot be confused by file name or GitHub artifact name.
+- No private source, private repo URL, access token, or secret value is committed.
+
+Testing:
+- Run public CMake configure/build/package if dependencies are available.
+- Run premium CMake configure/build/package if the private WSPremium source is available.
+- Validate both workflow YAML files as much as possible locally.
+- If private repo access or packaging tools are unavailable, document the exact missing dependency.

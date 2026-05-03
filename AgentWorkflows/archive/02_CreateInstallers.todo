@@ -1,0 +1,39 @@
+Task: Add installer scripts for the CMake-built WaviateScript Standalone app and VST3 plugin.
+
+Depends on:
+01_SetupCMakeBuild.todo should be complete, or equivalent CMake build outputs must already exist.
+
+Background:
+The project needs installer outputs for Windows and macOS so users can install WaviateScript without manually copying build products. WiX is appropriate for Windows MSI packaging. WiX does not create macOS pkg installers, so use a platform-native macOS packaging tool such as pkgbuild/productbuild, CPack, or another well-known permissive tool if that fits the CMake build better.
+
+Requirements:
+- Add scripts and installer definitions under a clear location such as installer/ or scripts/package/.
+- Windows:
+  - Build a Windows installer with WiX Toolset, preferably the wix CLI used by current WiX versions.
+  - Install the Standalone executable to a normal application location such as C:\Program Files\WaviateScript.
+  - Install the VST3 output to the standard Windows 64-bit VST3 location: C:\Program Files\Common Files\VST3.
+  - Include Start Menu shortcuts for the Standalone app if straightforward.
+  - Use stable product/upgrade identifiers and version 1.0.0 unless project metadata has been updated.
+- macOS:
+  - Build a macOS installer package for the Standalone .app and VST3 output.
+  - Install the Standalone app to /Applications.
+  - Install the VST3 output to /Library/Audio/Plug-Ins/VST3/.
+  - If the CMake build also produces an AU component, package it only if it is easy and does not distract from Standalone/VST3.
+  - Leave clear variables/placeholders for Developer ID signing and notarization, but do not require private credentials for unsigned local packaging.
+- Scripts should accept an input build directory and output directory so CI can call them after cmake --build.
+- Do not rebuild the plugin inside the installer scripts unless there is a small wrapper script that explicitly performs build-then-package.
+- Keep platform scripts separate if that is simpler:
+  - Windows example: scripts/package/windows/build-installer.ps1
+  - macOS example: scripts/package/macos/build-installer.sh
+- Document the commands needed to produce each installer locally.
+
+Acceptance criteria:
+- Running the Windows packaging script after a Release CMake build creates a distributable Windows installer containing Standalone and VST3 outputs.
+- Running the macOS packaging script after a Release CMake build creates a distributable macOS installer containing Standalone and VST3 outputs.
+- Installer output filenames include platform and project version, for example WaviateScript-1.0.0-windows.msi and WaviateScript-1.0.0-macos.pkg.
+- The scripts fail with useful messages when expected build outputs are missing.
+- Paths and file names are documented for the GitHub Actions packaging task.
+
+Testing:
+- If WiX/pkgbuild tools are installed, run the package scripts against real CMake build outputs.
+- If packaging tools are unavailable, run script syntax checks where possible and document the missing tools exactly.

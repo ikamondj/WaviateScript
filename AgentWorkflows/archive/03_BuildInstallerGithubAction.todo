@@ -1,0 +1,42 @@
+Task: Add a GitHub Actions workflow that builds WaviateScript and publishes Windows/macOS installers.
+
+Depends on:
+01_SetupCMakeBuild.todo and 02_CreateInstallers.todo should be complete, or equivalent CMake and installer scripts must already exist.
+
+Background:
+The repository needs a manual CI/CD entry point that can build Windows, macOS, or all installers. When all platforms are requested, the platform builds should run in parallel and produce downloadable installers as artifacts, with an optional release upload if the workflow is run for a tag or a release mode is easy to support.
+
+Requirements:
+- Add a workflow file under .github/workflows/, for example .github/workflows/build-installers.yml.
+- Use workflow_dispatch with a choice/dropdown input:
+  - name: platform
+  - choices: all, windows, macos
+  - default: all
+- Use a matrix or separate jobs so Windows and macOS builds run in parallel when platform is all.
+- Gate each job so platform=windows only runs the Windows job, platform=macos only runs the macOS job, and platform=all runs both.
+- Use the CMake build from 01_SetupCMakeBuild.todo.
+- Keep JUCE pinned to 8.0.12. If CI fetches JUCE, use the same pinned tag/commit as CMake. Do not float to latest.
+- Install platform dependencies in CI:
+  - Windows: CMake, Ninja, WiX CLI, LLVM/Clang dependencies required by the project, and any compiler toolchain needed by the CMake build.
+  - macOS: CMake, Ninja, LLVM/Clang dependencies required by the project, pkgbuild/productbuild or the selected macOS packaging tools.
+- Build Release artifacts for Standalone and VST3.
+- Run the installer packaging scripts from 02_CreateInstallers.todo.
+- Upload the generated installers with actions/upload-artifact.
+- Add a final collection/release job if useful:
+  - It should wait for completed platform jobs.
+  - It should make all requested installers easy to download.
+  - If release publishing is implemented, only publish on tags or behind an explicit workflow input so normal manual test runs do not create releases accidentally.
+- Add clear artifact names, for example waviate-script-windows-installer and waviate-script-macos-installer.
+
+Acceptance criteria:
+- The Actions UI shows a manual dropdown for all, windows, and macos.
+- Selecting all starts independent Windows and macOS builds that can execute in parallel.
+- Selecting windows only produces the Windows installer artifact.
+- Selecting macos only produces the macOS installer artifact.
+- A successful run leaves downloadable installer artifacts that are sufficient to install the WaviateScript Standalone app and VST3 plugin on the selected platform.
+- The workflow avoids Projucer and Visual Studio project files; it uses CMake and the packaging scripts.
+
+Testing:
+- Validate the workflow YAML locally if a validator is available.
+- If GitHub CLI is available, inspect or dry-run the workflow as much as possible.
+- Otherwise, document that full validation requires running workflow_dispatch in GitHub Actions.

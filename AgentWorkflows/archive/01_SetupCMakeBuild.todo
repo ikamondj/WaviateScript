@@ -1,0 +1,44 @@
+Task: Add a CMake build for WaviateScript and stop requiring Projucer/Visual Studio project files for normal builds.
+
+Background:
+WaviateScript is currently described by WaviateScript.jucer and generated JuceLibraryCode files. The project should move to a checked-in CMake build that can be used locally and by CI/CD. Keep JUCE pinned to the version in AgentContext.context: JUCE 8.0.12. JUCE APIs move around, so do not float to latest.
+
+Requirements:
+- Add a root CMakeLists.txt that builds the WaviateScript plugin directly with JUCE CMake APIs.
+- Add a CMake option/path for local JUCE modules, for example WAVIATESCRIPT_JUCE_DIR, so a local checkout such as C:\Users\ikamo\OneDrive\Documents\JuceInstalls\JUCE can be used without downloading.
+- If no local JUCE path is supplied, fetch JUCE from the official JUCE repository with FetchContent and pin the tag or commit to JUCE 8.0.12.
+- Do not call Projucer or require generated Visual Studio project files during configure/build.
+- Prefer Ninja or normal CMake generators. Windows may still need a compiler toolchain, but the build should not depend on the checked-in VisualStudio2026 exporter.
+- Use juce_add_plugin, juce_generate_juce_header, and explicit source lists transcribed from WaviateScript.jucer instead of compiling Projucer-generated include_juce_*.cpp translation units.
+- Preserve current plugin metadata from JuceLibraryCode/JucePluginDefines.h:
+  - name/product: WaviateScript
+  - version: 1.0.0
+  - manufacturer: yourcompany
+  - bundle id: com.yourcompany.WaviateScript
+  - manufacturer code: Manu
+  - plugin code: Lh86
+  - formats at minimum: Standalone and VST3; include AU on macOS only if it does not block the requested Standalone/VST3 packaging path.
+- Preserve current JUCE options, including JUCE_STRICT_REFCOUNTEDPOINTER=1 and JUCE_VST3_CAN_REPLACE_VST2=0.
+- Keep existing #include <JuceHeader.h> source compatibility by generating the JUCE header through CMake.
+- Add C++17 or newer as needed for existing std::variant usage.
+- Add CMake handling for LLVM/Clang headers and libraries currently represented by the Visual Studio exporter. Prefer find_package(LLVM CONFIG REQUIRED) and find_package(Clang CONFIG REQUIRED) or documented cache variables over hardcoded Visual Studio library paths.
+- Add an option for the premium static library path:
+  - Default non-premium builds should compile without requiring Source/WSPremium output.
+  - If WAVIATESCRIPT_PREMIUM=ON, build Source/WSPremium as a CMake static library or link a provided WSPremium library and define WAV_SCRIPT_PREMIUM=1.
+- Keep the legacy .jucer and JuceLibraryCode files unless removal is necessary; this task is to add the CMake path, not to delete project history.
+- Add a short docs note to README.md or a new build doc with local commands for Windows and macOS.
+
+Suggested local commands to support:
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWAVIATESCRIPT_JUCE_DIR="C:/Users/ikamo/OneDrive/Documents/JuceInstalls/JUCE"
+cmake --build build --config Release
+
+Acceptance criteria:
+- A clean checkout can configure with CMake using local JUCE 8.0.12.
+- A clean checkout can configure with CMake by fetching JUCE 8.0.12 when no local path is provided.
+- The build produces WaviateScript Standalone and WaviateScript VST3 outputs without running Projucer.
+- Build output locations are documented clearly enough for installer tasks to consume.
+- The CMake files are ready for GitHub Actions on windows-latest and macos-latest.
+
+Testing:
+- Run at least one local configure and build if the required compiler, JUCE, and LLVM/Clang dependencies are available.
+- If a full build cannot run locally, run CMake configure as far as possible and document the missing dependency exactly.
