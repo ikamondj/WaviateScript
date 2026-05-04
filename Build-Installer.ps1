@@ -29,17 +29,55 @@ $SOLUTION_PATH = "Builds\VisualStudio2026\WaviateScript.sln"
 $WXS_SOURCE = "WaviateScript.wxs"
 $INSTALLER_DIR = "installer_build"
 $OUTPUT_MSI = "WaviateScript-Installer.msi"
+$MSBUILD_PATH = $null
+
+function Resolve-MSBuildPath {
+    $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
+    if ($msbuild) {
+        return $msbuild.Source
+    }
+
+    $programFiles = [Environment]::GetFolderPath('ProgramFiles')
+    $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+    $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
+
+    if (Test-Path $vswhere) {
+        $latest = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\Current\Bin\amd64\MSBuild.exe" |
+            Select-Object -First 1
+        if ($latest -and (Test-Path $latest)) {
+            return $latest
+        }
+    }
+
+    $candidateRoots = @(
+        (Join-Path $programFiles "Microsoft Visual Studio"),
+        (Join-Path $programFilesX86 "Microsoft Visual Studio")
+    ) | Where-Object { Test-Path $_ }
+
+    foreach ($root in $candidateRoots) {
+        $candidate = Get-ChildItem -Path $root -Recurse -Filter MSBuild.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like "*\MSBuild\Current\Bin\amd64\MSBuild.exe" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+        if ($candidate) {
+            return $candidate.FullName
+        }
+    }
+
+    return $null
+}
 
 function Test-Prerequisites {
     Write-Verbose "Checking prerequisites..."
     
     # Check MSBuild
-    $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
-    if (-not $msbuild) {
+    $script:MSBUILD_PATH = Resolve-MSBuildPath
+    if (-not $script:MSBUILD_PATH) {
         Write-Error "MSBuild not found. Please install Visual Studio with C++ workload."
         return $false
     }
-    Write-Verbose "✓ MSBuild found: $($msbuild.Source)"
+    Write-Verbose "MSBuild found: $script:MSBUILD_PATH"
     
     # Check WiX (optional if only building without installer)
     if (-not $OnlyInstaller) {
@@ -56,7 +94,7 @@ function Test-Prerequisites {
         }
     }
     
-    Write-Verbose "✓ All prerequisites met"
+    Write-Verbose "All prerequisites met"
     return $true
 }
 
@@ -74,17 +112,19 @@ function Build-Solution {
     }
     
     try {
-        msbuild $SOLUTION_PATH `
+        # The generated VS2026 solution can fail when MSBuild schedules its dependency projects in parallel.
+        & $script:MSBUILD_PATH $SOLUTION_PATH `
             /p:Configuration=$Configuration `
             /p:Platform=x64 `
-            /m
+            /m:1 `
+            /nologo
         
         if ($LASTEXITCODE -ne 0) {
             Write-Error "MSBuild failed with exit code $LASTEXITCODE"
             return $false
         }
         
-        Write-Verbose "✓ Solution built successfully"
+        Write-Verbose "Solution built successfully"
         return $true
     }
     catch {
@@ -121,7 +161,7 @@ function Verify-BuildArtifacts {
         return $false
     }
     
-    Write-Verbose "✓ All build artifacts found"
+    Write-Verbose "OK: All build artifacts found"
     return $true
 }
 
@@ -150,7 +190,7 @@ function Prepare-InstallerDirectory {
     Copy-Item "Source\Waviate.h" "$INSTALLER_DIR\Waviate.h"
     Copy-Item "Source\Waviate.hpp" "$INSTALLER_DIR\Waviate.hpp"
     
-    Write-Verbose "✓ Files copied to installer directory"
+    Write-Verbose "OK: Files copied to installer directory"
 }
 
 function Create-LicenseFile {
@@ -170,7 +210,7 @@ This software is provided AS-IS.\par
 "@
     
     Set-Content -Path "$INSTALLER_DIR\LICENSE.rtf" -Value $rtfContent
-    Write-Verbose "✓ License file created"
+    Write-Verbose "OK: License file created"
 }
 
 function Update-WixSourceFile {
@@ -197,7 +237,7 @@ function Update-WixSourceFile {
         "$installerPath\$INSTALLER_DIR\LICENSE.rtf"
     
     $wxsContent | Set-Content "$env:TEMP\WaviateScript.wxs"
-    Write-Verbose "✓ WiX source file updated"
+    Write-Verbose "OK: WiX source file updated"
     return $true
 }
 
@@ -232,7 +272,7 @@ function Build-Installer {
         }
         
         $msiSize = (Get-Item $OUTPUT_MSI).Length / 1MB
-        Write-Host "✓ Installer created: $OUTPUT_MSI ($($msiSize.ToString('F2')) MB)"
+        Write-Host "OK: Installer created: $OUTPUT_MSI ($($msiSize.ToString('F2')) MB)"
         return $true
     }
     catch {
