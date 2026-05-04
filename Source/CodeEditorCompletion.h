@@ -12,6 +12,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <vector>
 
 #include <JuceHeader.h>
@@ -36,6 +37,8 @@ struct CompletionItem
     juce::String name;
     juce::String displayText;
     juce::String insertText;
+    // Offset from the end of insertText after insertion. Negative values place
+    // the caret inside call parentheses.
     int cursorOffsetAfterInsert = 0;
     Kind kind = Kind::Function;
     juce::String documentation;
@@ -56,27 +59,31 @@ public:
     juce::String extractCompletionContext(const juce::String& sourceCode, int caretPos, juce::String& outMemberOwner);
 
 private:
-    void buildWaviateCoreMembers();
-    void buildWaviateSampleMembers();
-    void buildWaviateFrequencyMembers();
-    void buildStructFields();
-    void buildGlobalSymbols();
+    struct CompletionContext
+    {
+        juce::String prefix;
+        juce::String memberOwnerExpression;
+        juce::String memberOwnerType;
+        bool isMemberAccess = false;
+    };
+
+    using SymbolTable = std::map<juce::String, juce::String>;
+
+    CompletionContext getCompletionContext(const juce::String& sourceCode, int caretPos) const;
+    SymbolTable buildVisibleSymbolTable(const juce::String& sourceCode, int caretPos) const;
+    juce::String resolveExpressionType(const juce::String& expression, const SymbolTable& symbols) const;
+    juce::String resolveMemberReturnType(const juce::String& ownerType, const juce::String& memberName) const;
+    std::vector<CompletionItem> getGlobalCompletions(const juce::String& prefix, const SymbolTable& symbols) const;
+    std::vector<CompletionItem> getMemberCompletionsForType(const juce::String& memberOwnerType) const;
 
     static bool isIdentifierChar(juce::juce_wchar c);
+    static bool isCodePosition(const juce::String& sourceCode, int caretPos);
+    static juce::String stripCommentsAndStrings(const juce::String& sourceCode);
+    static juce::String normaliseTypeName(juce::String typeName);
     static std::vector<CompletionItem> filterByPrefix(const std::vector<CompletionItem>& items,
                                                        const juce::String& prefix);
     static std::vector<CompletionItem> sortByRelevance(const std::vector<CompletionItem>& items,
                                                         const juce::String& prefix);
-
-    std::vector<CompletionItem> waviateCoreMembers;
-    std::vector<CompletionItem> waviateSampleMembers;
-    std::vector<CompletionItem> waviateFrequencyMembers;
-    std::vector<CompletionItem> waviateSampleInputFields;
-    std::vector<CompletionItem> waviateFrequencyInputFields;
-    std::vector<CompletionItem> waviateComplexFields;
-    std::vector<CompletionItem> globalFunctions;
-    std::vector<CompletionItem> globalKeywords;
-    std::vector<CompletionItem> globalTypes;
 };
 
 /**
@@ -103,13 +110,17 @@ private:
     void resized() override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
+    static juce::String getKindLabel(CompletionItem::Kind kind);
+    static juce::Colour getKindColour(CompletionItem::Kind kind);
 
     juce::CodeEditorComponent* editor = nullptr;
     std::vector<CompletionItem> completionItems;
     int selectedIndex = 0;
-    static constexpr int itemHeight = 20;
+    int firstVisibleIndex = 0;
+    static constexpr int itemHeight = 22;
     static constexpr int maxVisibleItems = 10;
-    static constexpr int menuWidth = 300;
+    static constexpr int menuWidth = 420;
+    static constexpr int kindBadgeWidth = 44;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompletionPopupMenu)
 };

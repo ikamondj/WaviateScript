@@ -139,6 +139,8 @@ target_sources(WaviateScript
         Source/WasmCompiler.h
         Source/Waviate.h
         Source/Waviate.hpp
+        Source/WaviateCppLanguageModel.cpp
+        Source/WaviateCppLanguageModel.h
         Source/WaviateInput.h
 )
 

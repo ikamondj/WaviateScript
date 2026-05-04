@@ -104,6 +104,11 @@ public:
     void setCompletionsEnabled(bool shouldBeEnabled);
     bool areCompletionsEnabled() const { return areCompletionsEnabledFlag; }
 
+    /**
+     * Set the active source extension used for compiler and language tooling.
+     */
+    void setFileExtension(const juce::String& extension);
+
 private:
     void paint(juce::Graphics& g) override;
     void resized() override;

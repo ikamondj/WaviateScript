@@ -128,6 +128,21 @@ void CodeEditor::setCompletionsEnabled(bool shouldBeEnabled)
         completionMenu->hideCompletions();
 }
 
+void CodeEditor::setFileExtension(const juce::String& extension)
+{
+    auto normalisedExtension = extension.trim();
+    if (normalisedExtension.isEmpty())
+        return;
+
+    if (! normalisedExtension.startsWithChar('.'))
+        normalisedExtension = "." + normalisedExtension;
+
+    compilerExtension = normalisedExtension.toLowerCase();
+
+    if (completionMenu != nullptr)
+        completionMenu->hideCompletions();
+}
+
 //==============================================================================
 void CodeEditor::ensureEditorCreated()
 {
@@ -559,7 +574,7 @@ void CodeEditor::updateCompletions()
     if (editor == nullptr || completionProvider == nullptr || completionMenu == nullptr)
         return;
 
-    if (! areCompletionsEnabledFlag)
+    if (! areCompletionsEnabledFlag || ! compilerExtension.equalsIgnoreCase(".wlsl"))
     {
         completionMenu->hideCompletions();
         return;
@@ -592,9 +607,16 @@ void CodeEditor::triggerAutocompletionIfApplicable(juce::juce_wchar createdChar)
         return;
     }
 
-    // Show completion menu after typing alphanumeric, underscore, or member access operators
+    // Show completion menu after typing alphanumeric, underscore, or member access operators.
     const bool isIdentifierChar = juce::CharacterFunctions::isLetterOrDigit(createdChar) || createdChar == '_';
-    const bool isMemberAccess = createdChar == '.' || createdChar == '>';
+    bool isMemberAccess = createdChar == '.';
+
+    if (createdChar == '>')
+    {
+        const auto sourceCode = getText();
+        const auto caretOffset = editor->getCaretPos().getPosition();
+        isMemberAccess = caretOffset >= 2 && sourceCode[caretOffset - 2] == '-';
+    }
 
     if (isIdentifierChar || isMemberAccess)
     {
@@ -616,6 +638,10 @@ void CodeEditor::handleCompletionAccepted(const CompletionItem& item)
     const int caretOffset = caretPos.getPosition();
     const auto sourceCode = getText();
 
+    const auto insertionText = item.insertText.isNotEmpty() ? item.insertText : item.name;
+    if (insertionText.isEmpty())
+        return;
+
     // Extract prefix (word being completed)
     int prefixStart = caretOffset;
     while (prefixStart > 0 && (juce::CharacterFunctions::isLetterOrDigit(sourceCode[prefixStart - 1]) || sourceCode[prefixStart - 1] == '_'))
@@ -625,10 +651,12 @@ void CodeEditor::handleCompletionAccepted(const CompletionItem& item)
 
     // Delete prefix and insert completion
     document.deleteSection(prefixStart, prefixLength);
-    document.insertText(prefixStart, item.insertText);
+    document.insertText(prefixStart, insertionText);
 
     // Position caret after insertion
-    const int newCaretOffset = prefixStart + item.insertText.length() + item.cursorOffsetAfterInsert;
+    const int newCaretOffset = juce::jlimit(0,
+                                            document.getAllContent().length(),
+                                            prefixStart + insertionText.length() + item.cursorOffsetAfterInsert);
     const juce::CodeDocument::Position newPos(document, newCaretOffset);
     editor->moveCaretTo(newPos, false);
 

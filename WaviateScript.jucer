@@ -17,6 +17,10 @@
               file="Source/NewFileTemplateGenerator.cpp"/>
         <FILE id="FUmZs7" name="NewFileTemplateGenerator.h" compile="0" resource="0"
               file="Source/NewFileTemplateGenerator.h"/>
+        <FILE id="wcpmdl" name="WaviateCppLanguageModel.cpp" compile="1" resource="0"
+              file="Source/WaviateCppLanguageModel.cpp"/>
+        <FILE id="wcpmh1" name="WaviateCppLanguageModel.h" compile="0" resource="0"
+              file="Source/WaviateCppLanguageModel.h"/>
       </GROUP>
       <GROUP id="{87D8093D-F43C-F0D0-E966-0B2515BC63E4}" name="Compiler">
         <FILE id="LJpq8d" name="AbstractCompiler.cpp" compile="1" resource="0"
