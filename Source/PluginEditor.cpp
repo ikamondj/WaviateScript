@@ -57,7 +57,13 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
                         "Ctrl+O - Open File\n"
                         "Ctrl+S - Save File\n"
                         "Ctrl+Shift+S - Save As\n"
-                        "Ctrl+Enter - Compile\n");
+                        "Ctrl+Enter - Compile\n"
+                        "Ctrl+Space - Play/Pause (or Autocomplete in editor)\n"
+                        "Ctrl+L - Toggle Log Viewer\n"
+                        "Ctrl+W - Toggle Waveform Visualizer\n\n"
+                        "Features:\n"
+                        "• Autocomplete: Type to see C++ and Waviate API suggestions\n"
+                        "• Member access: Type 'input->' or 'wav.' for member completions\n");
                 }
             });
     };

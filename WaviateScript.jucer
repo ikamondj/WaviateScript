@@ -33,6 +33,8 @@
       <GROUP id="{DB0ACCFF-AF6D-E11F-1BDB-A1F8AC442D35}" name="GUI">
         <FILE id="vSTGiu" name="CodeEditor.cpp" compile="1" resource="0" file="Source/CodeEditor.cpp"/>
         <FILE id="TpSqQt" name="CodeEditor.h" compile="0" resource="0" file="Source/CodeEditor.h"/>
+        <FILE id="compcpp" name="CodeEditorCompletion.cpp" compile="1" resource="0" file="Source/CodeEditorCompletion.cpp"/>
+        <FILE id="comph" name="CodeEditorCompletion.h" compile="0" resource="0" file="Source/CodeEditorCompletion.h"/>
       </GROUP>
       <GROUP id="{B4D00BBF-74EE-E674-ADF6-4FF9CD854766}" name="DataStructure">
         <FILE id="TLCpGp" name="LockFreeFifo.h" compile="0" resource="0" file="Source/LockFreeFifo.h"/>

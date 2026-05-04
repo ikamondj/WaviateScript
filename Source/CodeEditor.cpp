@@ -277,6 +277,36 @@ bool CodeEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
         return true;
     }
     
+    // Ctrl+Space: Toggle play/pause (handled by PluginEditor)
+    // Note: This is handled by the parent component, so we don't consume it here
+    
+    // Ctrl+L: Toggle log viewer
+    if (key.getModifiers().isCtrlDown() && (key.getKeyCode() == juce::KeyPress::createFromDescription("ctrl+l").getKeyCode()))
+    {
+        isLogExpanded = !isLogExpanded;
+        expandLogButton.setButtonText(isLogExpanded ? "Hide Logs" : "Show Logs");
+        resized();
+        repaint();
+        return true;
+    }
+    
+    // Ctrl+W: Toggle waveform visualizer
+    if (key.getModifiers().isCtrlDown() && (key.getKeyCode() == juce::KeyPress::createFromDescription("ctrl+w").getKeyCode()))
+    {
+        isVisualizerExpanded = !isVisualizerExpanded;
+        updateVisualizerButton();
+        resized();
+        repaint();
+        return true;
+    }
+    
+    // Ctrl+Space: Show autocomplete (when editor has focus)
+    if (key.getModifiers().isCtrlDown() && (key.getKeyCode() == juce::KeyPress::spaceKey))
+    {
+        updateCompletions();
+        return true;
+    }
+    
     return false;
 }
 
