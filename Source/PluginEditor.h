@@ -77,7 +77,6 @@ private:
     
     // Empty state UI
     juce::Label emptyStateLabel;
-    juce::AudioVisualiserComponent& visualizer;
 
     // ===== File State =====
     juce::File currentScriptFile;

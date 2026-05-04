@@ -59,6 +59,8 @@ public:
     bool isMidiEffect() const override;
     double getTailLengthSeconds() const override;
     void loadProgram(const juce::File& file);
+    void setProcessingEnabled(bool shouldBeEnabled);
+    bool isProcessingEnabled() const;
 
     //==============================================================================
     int getNumPrograms() override;
@@ -92,6 +94,7 @@ private:
     bool sustainDown = false;
     double currentSampleRate = 44100.0;
     uint64_t samplesSinceAppStart = 0;
+    std::atomic<bool> processingEnabled { true };
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessor)

@@ -17,7 +17,7 @@ namespace
 
 //==============================================================================
 WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScriptAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p), visualizer(p.visualizer)
+    : AudioProcessorEditor(&p), audioProcessor(p)
 {
     setSize(900, 700);
     
@@ -73,6 +73,7 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     // Code editor - pass processor for compilation
     addAndMakeVisible(codeEditor);
     codeEditor.setProcessor(p);
+    codeEditor.setVisualizer(p.visualizer);
 
     // Empty state message
     addAndMakeVisible(emptyStateLabel);
@@ -83,8 +84,6 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     emptyStateLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
     emptyStateLabel.setFont(juce::Font(16.0f));
 
-    addAndMakeVisible(visualizer);
-    visualizer.setSamplesPerBlock(5);
     showEmptyState();
 
     userSettings = std::make_unique<juce::PropertiesFile>(createSettingsOptions());
@@ -133,12 +132,8 @@ void WaviateScriptAudioProcessorEditor::resized()
         currentFileLabel.setBounds(toolbarBounds);
     }
 
-    auto editorArea = area.removeFromLeft(area.getWidth() * 3 / 4);
-    auto visualizerArea = area;
-
-    codeEditor.setBounds(editorArea);
-    visualizer.setBounds(visualizerArea);
-    emptyStateLabel.setBounds(editorArea);
+    codeEditor.setBounds(area);
+    emptyStateLabel.setBounds(area);
 }
 
 //==============================================================================
@@ -449,7 +444,6 @@ void WaviateScriptAudioProcessorEditor::applyTheme(const WaviateTheme& theme, bo
     currentFileLabel.setColour(juce::Label::textColourId, theme.mutedText);
     emptyStateLabel.setColour(juce::Label::textColourId, theme.mutedText);
     codeEditor.setTheme(theme);
-    visualizer.setColours(theme.visualizerBackground, theme.visualizerWaveform);
 
     if (persistSelection && userSettings != nullptr)
     {

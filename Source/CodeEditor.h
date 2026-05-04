@@ -47,6 +47,11 @@ public:
     void setProcessor(WaviateScriptAudioProcessor& processor);
 
     /**
+     * Attach the shared audio visualizer so it can live above the log panel.
+     */
+    void setVisualizer(juce::AudioVisualiserComponent& visualizerComponent);
+
+    /**
      * Set the text content of the editor.
      * Auto-creates the editor component if not yet initialized.
      */
@@ -92,8 +97,11 @@ private:
     // UI Layout helpers
     void layoutEditorArea();
     void layoutStatusBar();
+    int getVisualizerHeight(int availableHeight) const;
     juce::Font createCodeEditorFont() const;
     void applyTheme();
+    void updateVisualizerButton();
+    void updatePlayPauseButton();
     
     // Compilation
     void performCompilation();
@@ -109,19 +117,25 @@ private:
     // ===== Bottom Status Bar =====
     juce::Component statusBar;
     juce::TextButton expandLogButton{ "Show Logs" };
+    juce::TextButton expandVisualizerButton{ "Close Viz" };
+    juce::TextButton playPauseButton{ "||" };
     juce::TextButton compileButton{ "Compile (Ctrl+Enter)" };
     
     // ===== Log Area (Expandable) =====
     juce::TextEditor logListBox;
     std::vector<juce::String> logMessages;
+    juce::AudioVisualiserComponent* visualizer = nullptr;
     
     // ===== State =====
     juce::String compilerExtension = ".wsl";
     WaviateTheme activeTheme = WaviateThemes::fallback();
     bool isLogExpanded = false;
+    bool isVisualizerExpanded = true;
     static constexpr float codeFontHeight = 14.0f;
     static constexpr int collapsedStatusBarHeight = 28;
     static constexpr int expandedLogHeight = 120;
+    static constexpr int minVisualizerHeight = 120;
+    static constexpr int maxVisualizerHeight = 220;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CodeEditor)
 };

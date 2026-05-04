@@ -27,6 +27,23 @@ CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
         resized();
         repaint();
     };
+
+    statusBar.addAndMakeVisible(expandVisualizerButton);
+    expandVisualizerButton.onClick = [this] {
+        isVisualizerExpanded = !isVisualizerExpanded;
+        updateVisualizerButton();
+        resized();
+        repaint();
+    };
+
+    statusBar.addAndMakeVisible(playPauseButton);
+    playPauseButton.onClick = [this] {
+        if (audioProcessor == nullptr)
+            return;
+
+        audioProcessor->setProcessingEnabled(! audioProcessor->isProcessingEnabled());
+        updatePlayPauseButton();
+    };
     
     statusBar.addAndMakeVisible(compileButton);
     compileButton.onClick = [this] { compileCurrentSource(); };
@@ -37,6 +54,8 @@ CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
     addChildComponent(logListBox);
     
     addKeyListener(this);
+    updateVisualizerButton();
+    updatePlayPauseButton();
     applyTheme();
 }
 
@@ -46,6 +65,17 @@ CodeEditor::~CodeEditor() = default;
 void CodeEditor::setProcessor(WaviateScriptAudioProcessor& processor)
 {
     audioProcessor = &processor;
+    updatePlayPauseButton();
+}
+
+void CodeEditor::setVisualizer(juce::AudioVisualiserComponent& visualizerComponent)
+{
+    visualizer = &visualizerComponent;
+    visualizer->setSamplesPerBlock(5);
+    visualizer->setColours(activeTheme.visualizerBackground, activeTheme.visualizerWaveform);
+    addChildComponent(*visualizer);
+    updateVisualizerButton();
+    resized();
 }
 
 //==============================================================================
@@ -99,21 +129,25 @@ void CodeEditor::resized()
     
     const int padding = 4;
     area.reduce(padding, padding);
-    
-    // Status bar at bottom
-    const int statusBarHeight = isLogExpanded ? 
-        collapsedStatusBarHeight + expandedLogHeight : 
-        collapsedStatusBarHeight;
-    
-    auto statusArea = area.removeFromBottom(statusBarHeight);
-    statusBar.setBounds(statusArea.removeFromTop(collapsedStatusBarHeight));
-    layoutStatusBar();
-    
-    // Log area (if expanded)
-    if (isLogExpanded && statusBarHeight > collapsedStatusBarHeight)
+
+    juce::Rectangle<int> logArea;
+    if (isLogExpanded)
+        logArea = area.removeFromBottom(juce::jmin(expandedLogHeight, area.getHeight()));
+
+    const auto visualizerHeight = getVisualizerHeight(area.getHeight());
+    const auto visualizerArea = area.removeFromBottom(visualizerHeight);
+    if (visualizer != nullptr)
     {
-        logListBox.setBounds(statusArea.reduced(2));
+        visualizer->setBounds(visualizerArea);
+        visualizer->setVisible(isVisualizerExpanded);
     }
+
+    auto statusArea = area.removeFromBottom(juce::jmin(collapsedStatusBarHeight, area.getHeight()));
+    statusBar.setBounds(statusArea);
+    layoutStatusBar();
+
+    if (isLogExpanded)
+        logListBox.setBounds(logArea.reduced(2));
 
     logListBox.setVisible(isLogExpanded);
     
@@ -124,12 +158,13 @@ void CodeEditor::resized()
 void CodeEditor::layoutEditorArea()
 {
     auto area = getLocalBounds();
+    area.reduce(4, 4);
     
-    // Reserve space for status bar
-    const int statusBarHeight = isLogExpanded ? 
-        collapsedStatusBarHeight + expandedLogHeight : 
-        collapsedStatusBarHeight;
-    area.removeFromBottom(statusBarHeight);
+    if (isLogExpanded)
+        area.removeFromBottom(juce::jmin(expandedLogHeight, area.getHeight()));
+
+    area.removeFromBottom(getVisualizerHeight(area.getHeight()));
+    area.removeFromBottom(juce::jmin(collapsedStatusBarHeight, area.getHeight()));
     
     if (editor != nullptr)
         editor->setBounds(area);
@@ -139,12 +174,26 @@ void CodeEditor::layoutStatusBar()
 {
     auto bounds = statusBar.getLocalBounds().reduced(4);
     
-    // Expand button on the left
+    playPauseButton.setBounds(bounds.removeFromLeft(34));
+    bounds.removeFromLeft(6);
+
+    expandVisualizerButton.setBounds(bounds.removeFromLeft(110));
+    bounds.removeFromLeft(6);
+
     expandLogButton.setBounds(bounds.removeFromLeft(80));
     bounds.removeFromLeft(6);
     
     // Compile button on the right
     compileButton.setBounds(bounds.removeFromRight(140));
+}
+
+int CodeEditor::getVisualizerHeight(int availableHeight) const
+{
+    if (! isVisualizerExpanded || visualizer == nullptr || availableHeight <= 0)
+        return 0;
+
+    return juce::jmin(juce::jlimit(minVisualizerHeight, maxVisualizerHeight, availableHeight / 4),
+                      availableHeight);
 }
 
 void CodeEditor::setTheme(const WaviateTheme& theme)
@@ -169,6 +218,8 @@ void CodeEditor::applyTheme()
     };
 
     applyButtonColours(expandLogButton);
+    applyButtonColours(expandVisualizerButton);
+    applyButtonColours(playPauseButton);
     applyButtonColours(compileButton);
 
     logListBox.setColour(juce::TextEditor::backgroundColourId, activeTheme.editorBackground);
@@ -191,7 +242,29 @@ void CodeEditor::applyTheme()
         editor->repaint();
     }
 
+    if (visualizer != nullptr)
+        visualizer->setColours(activeTheme.visualizerBackground, activeTheme.visualizerWaveform);
+
     repaint();
+}
+
+void CodeEditor::updateVisualizerButton()
+{
+    expandVisualizerButton.setButtonText(isVisualizerExpanded ? "Close Viz" : "Open Viz");
+    expandVisualizerButton.setTooltip(isVisualizerExpanded ? "Hide visualizer" : "Show visualizer");
+
+    if (visualizer != nullptr)
+        visualizer->setVisible(isVisualizerExpanded);
+}
+
+void CodeEditor::updatePlayPauseButton()
+{
+    const bool hasProcessor = audioProcessor != nullptr;
+    const bool isPlaying = hasProcessor && audioProcessor->isProcessingEnabled();
+
+    playPauseButton.setEnabled(hasProcessor);
+    playPauseButton.setButtonText(isPlaying ? "||" : ">");
+    playPauseButton.setTooltip(isPlaying ? "Pause processing" : "Play processing");
 }
 
 //==============================================================================

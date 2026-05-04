@@ -142,6 +142,16 @@ void WaviateScriptAudioProcessor::loadProgram(const juce::File& file)
     }
 }
 
+void WaviateScriptAudioProcessor::setProcessingEnabled(bool shouldBeEnabled)
+{
+    processingEnabled.store(shouldBeEnabled, std::memory_order_release);
+}
+
+bool WaviateScriptAudioProcessor::isProcessingEnabled() const
+{
+    return processingEnabled.load(std::memory_order_acquire);
+}
+
 int WaviateScriptAudioProcessor::getNumPrograms()
 {
     return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
@@ -395,6 +405,28 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const int mainInputCh = mainIn.getNumChannels();
     const int mainOutputCh = mainOut.getNumChannels();
 
+    auto pushVisualizerSamples = [&]()
+    {
+        std::vector<float> samplesPush;
+        samplesPush.reserve(mainOutputCh);
+        for (int i = 0; i < blockNumSamples && mainOutputCh > 0; i += 1)
+        {
+            samplesPush.clear();
+            for (int j = 0; j < mainOutputCh; j += 1)
+                samplesPush.push_back(mainOut.getSample(j, i));
+
+            visualizer.pushSample(samplesPush.data(), mainOutputCh);
+        }
+    };
+
+    if (! processingEnabled.load(std::memory_order_acquire))
+    {
+        mainOut.clear();
+        samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
+        pushVisualizerSamples();
+        return;
+    }
+
     // Initialize midi arrays if needed (do this in constructor ideally)
     // std::memset(wavInput->midiNote, 0, sizeof(wavInput->midiNote));
     // std::memset(wavInput->midiControllersCC, 0, sizeof(wavInput->midiControllersCC));
@@ -471,15 +503,7 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
 
-    std::vector<float> samplesPush;
-    samplesPush.reserve(mainOutputCh);
-    for (int i = 0; i < blockNumSamples && mainOutputCh > 0; i += 1) {
-        samplesPush.clear();
-        for (int j = 0; j < mainOutputCh; j += 1) {
-            samplesPush.push_back(mainOut.getSample(j, i));
-        }
-        visualizer.pushSample(samplesPush.data(), mainOutputCh);
-    }
+    pushVisualizerSamples();
 
 }
 
