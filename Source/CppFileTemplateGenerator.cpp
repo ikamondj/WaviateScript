@@ -16,8 +16,8 @@ std::string CppFileTemplateGenerator::getDefaultFileSource() const
     return 0.0f;
 }
 
-/* Uncomment frequency_process below to enable frequency domain processing */
-// WaviateComplex frequency_process(const WaviateFrequency& wav) {
+/* Uncomment FrequencyProcess below to enable frequency domain processing */
+// WaviateComplex FrequencyProcess(const WaviateFrequency& wav) {
 //     int channel = wav.getChannel();
 //     int bin = wav.getBin();
 //     return wav.getIncomingSample(channel, bin);

@@ -138,6 +138,7 @@ function Verify-BuildArtifacts {
     $vst3Plugin = "Builds\VisualStudio2026\x64\$Configuration\VST3\WaviateScript.vst3"
     $waviateH = "Source\Waviate.h"
     $waviateHpp = "Source\Waviate.hpp"
+    $waviateInputH = "Source\WaviateInput.h"
     
     Write-Verbose "Verifying build artifacts..."
     
@@ -154,6 +155,9 @@ function Verify-BuildArtifacts {
     }
     if (-not (Test-Path $waviateHpp)) {
         $missingFiles += $waviateHpp
+    }
+    if (-not (Test-Path $waviateInputH)) {
+        $missingFiles += $waviateInputH
     }
     
     if ($missingFiles.Count -gt 0) {
@@ -189,6 +193,7 @@ function Prepare-InstallerDirectory {
     
     Copy-Item "Source\Waviate.h" "$INSTALLER_DIR\Waviate.h"
     Copy-Item "Source\Waviate.hpp" "$INSTALLER_DIR\Waviate.hpp"
+    Copy-Item "Source\WaviateInput.h" "$INSTALLER_DIR\WaviateInput.h"
     
     Write-Verbose "OK: Files copied to installer directory"
 }
@@ -233,6 +238,8 @@ function Update-WixSourceFile {
         "$installerPath\$INSTALLER_DIR\Waviate.h"
     $wxsContent = $wxsContent -replace 'SourceWaviate\.hpp', `
         "$installerPath\$INSTALLER_DIR\Waviate.hpp"
+    $wxsContent = $wxsContent -replace 'SourceWaviateInput\.h', `
+        "$installerPath\$INSTALLER_DIR\WaviateInput.h"
     $wxsContent = $wxsContent -replace 'LICENSE\.rtf', `
         "$installerPath\$INSTALLER_DIR\LICENSE.rtf"
     

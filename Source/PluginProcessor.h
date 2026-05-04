@@ -11,6 +11,7 @@
 #include <JuceHeader.h>
 #include "WaviateInput.h"
 #include "AbstractCompiler.h"
+#include <array>
 #include <atomic>
 
 #ifdef WAV_SCRIPT_PREMIUM
@@ -81,6 +82,17 @@ public:
 #endif
 private:
     void InitializeMidiMessageLookup(size_t blockSize);
+
+    std::array<uint8_t, 128> midiNoteOnState{};
+    std::array<uint8_t, 128> midiCCValueState{};
+    std::array<uint64_t, 128> sampleWhenMidiNoteOnState{};
+    std::array<uint64_t, 128> sampleWhenMidiNoteOffState{};
+    std::array<uint64_t, 128> sampleWhenCCValueChangedState{};
+    std::array<bool, 128> sustainDeferredNoteOff{};
+    bool sustainDown = false;
+    double currentSampleRate = 44100.0;
+    uint64_t samplesSinceAppStart = 0;
+
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessor)
 };

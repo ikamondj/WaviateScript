@@ -38,6 +38,8 @@
         <FILE id="TLCpGp" name="LockFreeFifo.h" compile="0" resource="0" file="Source/LockFreeFifo.h"/>
       </GROUP>
       <GROUP id="{F056CC0F-5F5D-B1C5-DDBD-9EC9FAF730B8}" name="Inputs"/>
+      <FILE id="wavh01" name="Waviate.h" compile="0" resource="0" file="Source/Waviate.h"/>
+      <FILE id="wavhpp" name="Waviate.hpp" compile="0" resource="0" file="Source/Waviate.hpp"/>
       <FILE id="yvUwGd" name="WaviateInput.h" compile="0" resource="0" file="Source/WaviateInput.h"/>
       <FILE id="rTu4JN" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>
@@ -46,6 +48,7 @@
       <FILE id="KIG1xs" name="PluginEditor.cpp" compile="1" resource="0"
             file="Source/PluginEditor.cpp"/>
       <FILE id="KXaYAE" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <FILE id="theme1" name="AppTheme.h" compile="0" resource="0" file="Source/AppTheme.h"/>
     </GROUP>
   </MAINGROUP>
   <MODULES>

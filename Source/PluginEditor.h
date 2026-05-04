@@ -10,18 +10,15 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "AppTheme.h"
 #include "CodeEditor.h"
-#include "CFileTemplateGenerator.h"
 #include "CppFileTemplateGenerator.h"
-#ifdef WAV_SCRIPT_PREMIUM
-#include "RustFileTemplateGenerator.h"
-#endif
 
 //==============================================================================
 /**
  * Editor with professional toolbar, file menu system, and keyboard shortcuts.
- * Supports creating new files in multiple languages, opening/saving files,
- * with full keyboard support (Ctrl+S for Save, Ctrl+Shift+S for Save As).
+ * Supports creating, opening, and saving Waviate Shading Language files with
+ * full keyboard support (Ctrl+S for Save, Ctrl+Shift+S for Save As).
  */
 class WaviateScriptAudioProcessorEditor : public juce::AudioProcessorEditor,
                                          private juce::KeyListener
@@ -37,19 +34,17 @@ public:
 private:
     // File menu operations
     void showFileMenu();
-    void showNewFileMenu();
-    void createNewFile(const juce::String& languageExtension);
+    void showViewMenu();
+    void createNewFile();
     void openFile();
     void saveFile();
     void saveFileAs();
     
     // File dialog handling
     void handleNewFileDialogResult(const juce::FileChooser& chooser, 
-                                   const juce::String& languageExtension,
                                    const juce::String& templateContent);
     void handleOpenFileDialogResult(const juce::FileChooser& chooser);
-    void handleSaveFileDialogResult(const juce::FileChooser& chooser, 
-                                    bool isNewFile);
+    void handleSaveFileDialogResult(const juce::FileChooser& chooser);
 
     // File operations
     void loadScriptFile(const juce::File& file);
@@ -58,9 +53,11 @@ private:
     void hideEmptyState();
     
     // Template generation helpers
-    juce::String getTemplateForLanguage(const juce::String& languageExtension) const;
-    juce::String getLanguageDisplayName(const juce::String& languageExtension) const;
+    juce::String getDefaultShaderTemplate() const;
     juce::File getDefaultSaveDirectory() const;
+    void applyTheme(const WaviateTheme& theme, bool persistSelection);
+    void selectTheme(const juce::String& themeId, bool persistSelection);
+    static juce::PropertiesFile::Options createSettingsOptions();
 
     WaviateScriptAudioProcessor& audioProcessor;
 
@@ -68,7 +65,9 @@ private:
     // Toolbar
     juce::Component toolbar;
     juce::TextButton fileMenuButton{ "File" };
+    juce::TextButton viewMenuButton{ "View" };
     juce::TextButton helpMenuButton{ "Help" };
+    juce::LookAndFeel_V4 themedLookAndFeel;
     
     // File info display
     juce::Label currentFileLabel;
@@ -87,6 +86,8 @@ private:
     // File state tracking
     bool isFileTransient = false;      // true = user hasn't saved the file yet
     bool isFileModified = false;       // true = file has unsaved changes
+    juce::String currentThemeId = WaviateThemes::fallback().id;
+    std::unique_ptr<juce::PropertiesFile> userSettings;
 
     // ===== Layout Constants =====
     static constexpr int toolbarHeight = 32;
@@ -94,11 +95,7 @@ private:
     static constexpr int buttonHeight = 24;
     static constexpr int padding = 6;
 
-    CfileTemplateGenerator cTemplateGen;
     CppFileTemplateGenerator cppTemplateGen;
-#ifdef WAV_SCRIPT_PREMIUM
-    RustFileTemplateGenerator rustTemplateGen;
-#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaviateScriptAudioProcessorEditor)
 };

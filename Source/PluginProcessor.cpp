@@ -10,11 +10,16 @@
 #include "PluginEditor.h"
 #include "Compilers.h"
 //#include "fftw3.h"
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <exception>
 #include <span>
 
 const size_t maxBlockSize = 8192;
 const size_t startingMidiPerSampleCount = 64;
 const size_t midiInitialCapacity = 128;
+constexpr size_t midiStateCount = 128;
 
 //==============================================================================
 WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
@@ -24,10 +29,12 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
+                     #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
                        )
+    , activeSampleShader(nullptr)
+    , activeFrequencyShader(nullptr)
     , visualizer(2)
 #ifdef WAV_SCRIPT_PREMIUM
     , gameControllerInterface(gamepadEventsQueue)
@@ -36,21 +43,25 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
 #endif
 {
     wavInput = std::make_unique<WaviateSampleInput>();
+    *wavInput = {};
 
-    compilers.insert({ ".wc", std::make_unique<ClangCompiler<false>>()});
-    compilers.insert({ ".wcpp", std::make_unique<ClangCompiler<true>>()});
-#ifdef WAV_SCRIPT_PREMIUM
-    compilers.insert({ ".wrs", std::make_unique<RustCompiler>() });
+    wavInput->midiNoteOn = midiNoteOnState.data();
+    wavInput->midiCCValue = midiCCValueState.data();
+    wavInput->sampleWhenMidiNoteOn = sampleWhenMidiNoteOnState.data();
+    wavInput->sampleWhenMidiNoteOff = sampleWhenMidiNoteOffState.data();
+    wavInput->sampleWhenCCValueChanged = sampleWhenCCValueChangedState.data();
+    wavInput->sustainDefer = sustainDeferredNoteOff.data();
+    wavInput->sampleRate = static_cast<float>(currentSampleRate);
 
-#endif
+    compilers.insert({ ".wsl", std::make_unique<ClangCompiler<true>>() });
     InitializeMidiMessageLookup(maxBlockSize);
 }
 
 void WaviateScriptAudioProcessor::InitializeMidiMessageLookup(size_t blockSize) {
-    midiBlockMessages.resize(maxBlockSize);
-    for (int i = 0; i < maxBlockSize; i += 1) {
-        midiBlockMessages[i].reserve(midiInitialCapacity);
-    }
+    midiBlockMessages.clear();
+    midiBlockMessages.resize(std::max(blockSize, startingMidiPerSampleCount));
+    for (auto& sampleMessages : midiBlockMessages)
+        sampleMessages.reserve(midiInitialCapacity);
 
 #ifdef WAV_SCRIPT_PREMIUM
     wavInput->oscColors = oscInterface.getOscColors();
@@ -105,14 +116,30 @@ double WaviateScriptAudioProcessor::getTailLengthSeconds() const
 void WaviateScriptAudioProcessor::loadProgram(const juce::File& file)
 {
     auto ext = file.getFileExtension().toStdString();
+    auto compiler = compilers.find(ext);
+    if (compiler == compilers.end())
+        return;
+
     juce::StringArray content;
     file.readLines(content);
     auto source = content.joinIntoString("\n");
-    SampleShader samp;
-    FrequencyShader freq;
-    compilers[ext]->compileSource(source.toStdString(), samp, freq);
-    activeSampleShader.store(samp, std::memory_order_release);
-    activeFrequencyShader.store(freq, std::memory_order_release);
+    SampleShader samp = nullptr;
+    FrequencyShader freq = nullptr;
+
+    try
+    {
+        compiler->second->compileSource(source.toStdString(), samp, freq);
+    }
+    catch (const std::exception&)
+    {
+        return;
+    }
+
+    if (samp != nullptr || freq != nullptr)
+    {
+        activeSampleShader.store(samp, std::memory_order_release);
+        activeFrequencyShader.store(freq, std::memory_order_release);
+    }
 }
 
 int WaviateScriptAudioProcessor::getNumPrograms()
@@ -142,8 +169,21 @@ void WaviateScriptAudioProcessor::changeProgramName (int index, const juce::Stri
 //==============================================================================
 void WaviateScriptAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    currentSampleRate = sampleRate > 0.0 ? sampleRate : currentSampleRate;
+    samplesSinceAppStart = 0;
+    sustainDown = false;
+
+    std::fill(midiNoteOnState.begin(), midiNoteOnState.end(), uint8_t { 0 });
+    std::fill(midiCCValueState.begin(), midiCCValueState.end(), uint8_t { 0 });
+    std::fill(sampleWhenMidiNoteOnState.begin(), sampleWhenMidiNoteOnState.end(), uint64_t { 0 });
+    std::fill(sampleWhenMidiNoteOffState.begin(), sampleWhenMidiNoteOffState.end(), uint64_t { 0 });
+    std::fill(sampleWhenCCValueChangedState.begin(), sampleWhenCCValueChangedState.end(), uint64_t { 0 });
+    std::fill(sustainDeferredNoteOff.begin(), sustainDeferredNoteOff.end(), false);
+
+    wavInput->sampleRate = static_cast<float>(currentSampleRate);
+
+    if (samplesPerBlock > 0 && static_cast<size_t>(samplesPerBlock) > midiBlockMessages.size())
+        InitializeMidiMessageLookup(static_cast<size_t>(samplesPerBlock));
 }
 
 
@@ -180,34 +220,33 @@ bool WaviateScriptAudioProcessor::isBusesLayoutSupported (const BusesLayout& lay
 }
 #endif
 
-#include <array>
-#include <algorithm>
-#include <cstring>
-
-// Put this somewhere persistent (member variables), not inside processBlock:
-std::array<bool, 128> sustainDeferredNoteOff{}; // notes released while sustain is down
-bool sustainDown = false;
-
-static inline void clearAllNotes(uint8_t* midiNote, std::span<bool,128> deferred)
+static inline void clearAllNotes(uint8_t* midiNote, std::span<bool, midiStateCount> deferred)
 {
-    std::memset(midiNote, 0, 128 * sizeof(bool));
-    for (int i = 0; i < deferred.size(); i += 1) {
-        deferred[i] = false;
-    }
+    if (midiNote != nullptr)
+        std::fill_n(midiNote, midiStateCount, uint8_t { 0 });
+
+    std::fill(deferred.begin(), deferred.end(), false);
 }
 
 static inline void applyMidiToState(const juce::MidiMessage& m,
                                    uint8_t* midiNote,
                                    uint8_t* midiCC,
+                                   uint64_t* sampleWhenMidiNoteOn,
+                                   uint64_t* sampleWhenMidiNoteOff,
+                                   uint64_t* sampleWhenCCValueChanged,
                                    bool& sustainDown,
-                                   std::span<bool, 128> sustainDeferredNoteOff)
+                                   std::span<bool, midiStateCount> sustainDeferredNoteOff,
+                                   uint64_t sampleTime)
 {
     if (m.isNoteOn())
     {
         const int note = m.getNoteNumber();
-        if (note >= 0 && note < 128)
+        if (note >= 0 && note < static_cast<int>(midiStateCount))
         {
-            midiNote[note] = 1;
+            if (midiNote != nullptr)
+                midiNote[note] = 1;
+            if (sampleWhenMidiNoteOn != nullptr)
+                sampleWhenMidiNoteOn[note] = sampleTime;
             sustainDeferredNoteOff[note] = false;
         }
         return;
@@ -216,8 +255,11 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
     if (m.isNoteOff())
     {
         const int note = m.getNoteNumber();
-        if (note >= 0 && note < 128)
+        if (note >= 0 && note < static_cast<int>(midiStateCount))
         {
+            if (sampleWhenMidiNoteOff != nullptr)
+                sampleWhenMidiNoteOff[note] = sampleTime;
+
             if (sustainDown)
             {
                 // Defer turning it off until sustain releases
@@ -225,7 +267,8 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
             }
             else
             {
-                midiNote[note] = false;
+                if (midiNote != nullptr)
+                    midiNote[note] = 0;
                 sustainDeferredNoteOff[note] = false;
             }
         }
@@ -246,7 +289,13 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
         const int cc = m.getControllerNumber();
         const int v  = m.getControllerValue();
 
-        midiCC[cc] = static_cast<uint8_t>(v);
+        if (cc < 0 || cc >= static_cast<int>(midiStateCount))
+            return;
+
+        if (midiCC != nullptr)
+            midiCC[cc] = static_cast<uint8_t>(v);
+        if (sampleWhenCCValueChanged != nullptr)
+            sampleWhenCCValueChanged[cc] = sampleTime;
 
         // Sustain pedal (CC 64): standard threshold is >= 64 = down
         if (cc == 64)
@@ -256,12 +305,13 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
             // sustain released: apply deferred note-offs
             if (sustainDown && !newSustainDown)
             {
-                for (int n = 0; n < 128; ++n)
+                for (size_t n = 0; n < midiStateCount; ++n)
                 {
-                    if (sustainDeferredNoteOff[(size_t)n])
+                    if (sustainDeferredNoteOff[n])
                     {
-                        midiNote[n] = false;
-                        sustainDeferredNoteOff[(size_t)n] = false;
+                        if (midiNote != nullptr)
+                            midiNote[n] = 0;
+                        sustainDeferredNoteOff[n] = false;
                     }
                 }
             }
@@ -269,7 +319,7 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
             sustainDown = newSustainDown;
         }
 
-        // Common “All Notes Off” is also sometimes sent as CC 123
+        // Common "All Notes Off" is also sometimes sent as CC 123
         if (cc == 123 || cc == 120)
         {
             clearAllNotes(midiNote, sustainDeferredNoteOff);
@@ -286,13 +336,16 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 {
     juce::ScopedNoDenormals noDenormals;
 
-    const int totalNumInputChannels  = getTotalNumInputChannels();
-    const int totalNumOutputChannels = getTotalNumOutputChannels();
     const int blockNumSamples        = buffer.getNumSamples();
 
-    if (blockNumSamples > midiBlockMessages.size()) {
-        InitializeMidiMessageLookup(blockNumSamples);
-    }
+    if (blockNumSamples <= 0)
+        return;
+
+    if (static_cast<size_t>(blockNumSamples) > midiBlockMessages.size())
+        InitializeMidiMessageLookup(static_cast<size_t>(blockNumSamples));
+
+    for (int samp = 0; samp < blockNumSamples; ++samp)
+        midiBlockMessages[static_cast<size_t>(samp)].clear();
 
     // Correct JUCE multi-bus handling:
     auto mainIn  = getBusBuffer(buffer, true,  0);
@@ -321,16 +374,22 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             sidechainEnabled = bus->isEnabled();
     }
     juce::AudioBuffer<float>* sideInPtr = nullptr;
-    juce::AudioBuffer<float> sideInDummy;
+    juce::AudioBuffer<float> sideInBuffer;
 
     if (sidechainEnabled)
     {
-        auto sideIn = getBusBuffer(buffer, true, 1);
+        sideInBuffer = getBusBuffer(buffer, true, 1);
         // If the host provides it, sideIn.getNumSamples() should match.
-        sideInPtr = &sideIn;
+        sideInPtr = &sideInBuffer;
     }
 
     wavInput->blockSize = buffer.getNumSamples();
+    wavInput->sampleRate = static_cast<float>(currentSampleRate);
+    wavInput->samplesSinceAppStart = samplesSinceAppStart;
+    wavInput->sampleInBlock = 0;
+    wavInput->sustain = sustainDown;
+    wavInput->previousSamples = nullptr;
+    wavInput->sampleMemoryCount = 0;
 
     // Determine effective input channels on the MAIN input bus
     const int mainInputCh = mainIn.getNumChannels();
@@ -365,27 +424,43 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         mainOut.clear(ch, 0, blockNumSamples);
 
     for (const auto& midiMessage : midiMessages) {
-        int samp = midiMessage.samplePosition;
-        midiBlockMessages[samp].push_back(midiMessage.getMessage());
+        const int samp = midiMessage.samplePosition;
+        if (samp >= 0 && samp < blockNumSamples)
+            midiBlockMessages[static_cast<size_t>(samp)].push_back(midiMessage.getMessage());
     }
 
     // ----- SampleWise Processing (segment) -----
     SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
     if (sampleShader) {
-        for (int ch = 0; ch < mainInputCh; ++ch)
+        for (int samp = 0; samp < blockNumSamples; ++samp)
         {
-            wavInput->channel = ch;
+            const uint64_t absoluteSample = samplesSinceAppStart + static_cast<uint64_t>(samp);
+            auto& sampleMidiMessages = midiBlockMessages[static_cast<size_t>(samp)];
 
-            const float* in = mainIn.getReadPointer(ch, 0);
-            float* out = mainOut.getWritePointer(ch, 0);
-
-            for (int samp = 0; samp < blockNumSamples; samp += 1) {
-                for (int m = 0; m < midiBlockMessages.size(); m += 1) {
-                    applyMidiToState(midiBlockMessages[samp][m], wavInput->midiNoteOn, wavInput->midiCCValue, wavInput->sustain, std::span<bool, 128>(wavInput->sustainDefer, 128));
-                    out[samp] = sampleShader(wavInput.get(), nullptr);
-                }
-                midiBlockMessages[samp].clear();
+            for (const auto& midiMessage : sampleMidiMessages) {
+                applyMidiToState(
+                    midiMessage,
+                    wavInput->midiNoteOn,
+                    wavInput->midiCCValue,
+                    wavInput->sampleWhenMidiNoteOn,
+                    wavInput->sampleWhenMidiNoteOff,
+                    wavInput->sampleWhenCCValueChanged,
+                    sustainDown,
+                    std::span<bool, midiStateCount>(wavInput->sustainDefer, midiStateCount),
+                    absoluteSample);
             }
+
+            wavInput->sampleInBlock = samp;
+            wavInput->samplesSinceAppStart = absoluteSample;
+            wavInput->sustain = sustainDown;
+
+            for (int ch = 0; ch < mainOutputCh; ++ch)
+            {
+                wavInput->channel = static_cast<uint8_t>(ch);
+                mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
+            }
+
+            sampleMidiMessages.clear();
         }
     }
 
@@ -394,14 +469,16 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     }
 
+    samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
+
     std::vector<float> samplesPush;
-    samplesPush.reserve(totalNumOutputChannels);
-    for (int i = 0; i < blockNumSamples; i += 1) {
+    samplesPush.reserve(mainOutputCh);
+    for (int i = 0; i < blockNumSamples && mainOutputCh > 0; i += 1) {
         samplesPush.clear();
-        for (int j = 0; j < totalNumOutputChannels; j += 1) {
+        for (int j = 0; j < mainOutputCh; j += 1) {
             samplesPush.push_back(mainOut.getSample(j, i));
         }
-        visualizer.pushSample(samplesPush.data(), totalNumOutputChannels);
+        visualizer.pushSample(samplesPush.data(), mainOutputCh);
     }
 
 }

@@ -8,8 +8,13 @@
   ==============================================================================
 */
 #include <cstdbool>
+#include <cstdint>
 
 #pragma once
+
+#ifndef WAVIATE_SCRIPT_INPUT_API_DEFINED
+#define WAVIATE_SCRIPT_INPUT_API_DEFINED
+
 struct WaviateSampleInput {
     uint64_t samplesSinceAppStart;
     int32_t sampleInBlock;
@@ -73,4 +78,10 @@ struct WaviateFrequencyInput {
     float sampleRate;
     uint64_t samplesSinceAppStart;
 };
+
+struct WaviateFrequencyStateWriter {
+
+};
+
+#endif
 

@@ -1,9 +1,8 @@
 /*
   ==============================================================================
 
-    CodeEditor.h - JUCE-based syntax-highlighted code editor component with
-    support for C, C++, and Rust (premium) with lazy initialization,
-    language selection, and integrated compilation.
+    CodeEditor.h - JUCE-based syntax-highlighted Waviate Shading Language
+    editor with lazy initialization and integrated compilation.
     
     Created: 25 Feb 2026 2:00:23am
     Author:  ikamo
@@ -14,16 +13,16 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "AppTheme.h"
 
 // Forward declaration
 class WaviateScriptAudioProcessor;
 
 /**
- * Professional code editor component with language selection, status bar, and compilation.
+ * Professional code editor component with status bar and compilation.
  * 
  * Features:
  * - Lazy initialization (editor created on first use)
- * - Language selector dropdown (C, C++, Rust with premium gating)
  * - Status bar with compile button and expandable log area
  * - Syntax highlighting with line numbers
  * - Tab-to-spaces conversion
@@ -33,8 +32,7 @@ class WaviateScriptAudioProcessor;
  * Usage:
  *   CodeEditor editor(audioProcessor);
  *   addAndMakeVisible(editor);
- *   editor.setText("float process(float x) { return x * 2; }");
- *   editor.setLanguage(".wcpp");
+ *   editor.setText("float SampleProcess(const WaviateSample& wav) { return 0.0f; }");
  */
 class CodeEditor : public juce::Component,
                    private juce::KeyListener
@@ -60,17 +58,6 @@ public:
     juce::String getText() const;
 
     /**
-     * Set the language/file extension for syntax highlighting and compilation.
-     * Supported: ".wc" (C), ".wcpp" (C++), ".wrs" (Rust - premium only)
-     */
-    void setLanguage(const juce::String& languageExtension);
-
-    /**
-     * Get the currently selected language extension.
-     */
-    juce::String getLanguage() const;
-
-    /**
      * Explicitly ensure editor is created.
      * Called automatically by setText() and resized().
      */
@@ -92,19 +79,21 @@ public:
      */
     void clearLog();
 
+    /**
+     * Apply an app theme to the editor chrome, syntax colours, and log surface.
+     */
+    void setTheme(const WaviateTheme& theme);
+
 private:
     void paint(juce::Graphics& g) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override;
 
-    // Language selection
-    void updateLanguageSelector();
-    void onLanguageSelected(int languageIndex);
-    
     // UI Layout helpers
     void layoutEditorArea();
     void layoutStatusBar();
     juce::Font createCodeEditorFont() const;
+    void applyTheme();
     
     // Compilation
     void performCompilation();
@@ -117,12 +106,9 @@ private:
     juce::CPlusPlusCodeTokeniser tokeniser;
     std::unique_ptr<juce::CodeEditorComponent> editor;
 
-    // ===== Top Right: Language Selector =====
-    std::unique_ptr<juce::ComboBox> languageSelector;
-    
     // ===== Bottom Status Bar =====
     juce::Component statusBar;
-    juce::TextButton expandLogButton{ "▼ Logs" };
+    juce::TextButton expandLogButton{ "Show Logs" };
     juce::TextButton compileButton{ "Compile (Ctrl+Enter)" };
     
     // ===== Log Area (Expandable) =====
@@ -130,7 +116,8 @@ private:
     std::vector<juce::String> logMessages;
     
     // ===== State =====
-    juce::String currentLanguage = ".wcpp";  // Default to C++
+    juce::String compilerExtension = ".wsl";
+    WaviateTheme activeTheme = WaviateThemes::fallback();
     bool isLogExpanded = false;
     static constexpr float codeFontHeight = 14.0f;
     static constexpr int collapsedStatusBarHeight = 28;

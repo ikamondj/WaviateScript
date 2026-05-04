@@ -1,7 +1,7 @@
 /*
   ==============================================================================
 
-    CodeEditor.cpp - Professional code editor with language selection and compilation
+    CodeEditor.cpp - Professional code editor with Waviate Shading Language compilation
     Created: 25 Feb 2026 2:00:23am
     Author:  ikamo
 
@@ -16,35 +16,28 @@ CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
     : audioProcessor(processor)
 {
     // Editor is created lazily on first use
-    
-    // Language selector dropdown
-    languageSelector = std::make_unique<juce::ComboBox>();
-    languageSelector->addItem("C", 1);
-    languageSelector->addItem("C++", 2);
-#ifdef WAV_SCRIPT_PREMIUM
-    languageSelector->addItem("Rust", 3);
-#endif
-    languageSelector->setSelectedItemIndex(1);  // Default to C++
-    languageSelector->onChange = [this] { 
-        onLanguageSelected(languageSelector->getSelectedItemIndex());
-    };
-    addAndMakeVisible(*languageSelector);
-    
+
     // Status bar components
     addAndMakeVisible(statusBar);
     
     statusBar.addAndMakeVisible(expandLogButton);
     expandLogButton.onClick = [this] {
         isLogExpanded = !isLogExpanded;
-        expandLogButton.setButtonText(isLogExpanded ? "▲ Logs" : "▼ Logs");
+        expandLogButton.setButtonText(isLogExpanded ? "Hide Logs" : "Show Logs");
         resized();
         repaint();
     };
     
     statusBar.addAndMakeVisible(compileButton);
     compileButton.onClick = [this] { compileCurrentSource(); };
+
+    logListBox.setMultiLine(true);
+    logListBox.setReadOnly(true);
+    logListBox.setScrollbarsShown(true);
+    addChildComponent(logListBox);
     
     addKeyListener(this);
+    applyTheme();
 }
 
 CodeEditor::~CodeEditor() = default;
@@ -66,19 +59,10 @@ void CodeEditor::ensureEditorCreated()
     editor->setTabSize(4, true);
     editor->setFont(createCodeEditorFont());
     editor->setLineNumbersShown(true);
-    editor->setColour(juce::CodeEditorComponent::backgroundColourId, 
-                      juce::Colours::lightslategrey.brighter());
-    editor->setColour(juce::CodeEditorComponent::defaultTextColourId, 
-                      juce::Colours::whitesmoke);
-    editor->setColour(juce::CaretComponent::caretColourId, 
-                      juce::Colours::whitesmoke);
-    editor->setColour(juce::CodeEditorComponent::highlightColourId, 
-                      juce::Colours::cornflowerblue.withAlpha(0.25f));
-    editor->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
-                      juce::Colours::darkgrey.withAlpha(0.5f));
     
     addAndMakeVisible(*editor);
     editor->addKeyListener(this);
+    applyTheme();
     layoutEditorArea();
 }
 
@@ -102,25 +86,19 @@ juce::Font CodeEditor::createCodeEditorFont() const
 void CodeEditor::paint(juce::Graphics& g)
 {
     // Status bar background
-    g.fillAll(juce::Colours::darkslategrey);
-    g.setColour(juce::Colours::darkgrey.withAlpha(0.8f));
+    g.fillAll(activeTheme.panelBackground);
+    g.setColour(activeTheme.toolbarBackground);
     g.fillRect(statusBar.getBounds());
+    g.setColour(activeTheme.outline);
+    g.drawRect(getLocalBounds());
 }
 
 void CodeEditor::resized()
 {
     auto area = getLocalBounds();
     
-    // Language selector in top right
-    const int selectorWidth = 120;
-    const int selectorHeight = 24;
     const int padding = 4;
-    languageSelector->setBounds(
-        area.getRight() - selectorWidth - padding,
-        padding,
-        selectorWidth,
-        selectorHeight
-    );
+    area.reduce(padding, padding);
     
     // Status bar at bottom
     const int statusBarHeight = isLogExpanded ? 
@@ -128,15 +106,16 @@ void CodeEditor::resized()
         collapsedStatusBarHeight;
     
     auto statusArea = area.removeFromBottom(statusBarHeight);
-    statusBar.setBounds(statusArea);
+    statusBar.setBounds(statusArea.removeFromTop(collapsedStatusBarHeight));
     layoutStatusBar();
     
     // Log area (if expanded)
     if (isLogExpanded && statusBarHeight > collapsedStatusBarHeight)
     {
-        auto logArea = statusArea.removeFromBottom(expandedLogHeight);
-        logListBox.setBounds(logArea.reduced(2));
+        logListBox.setBounds(statusArea.reduced(2));
     }
+
+    logListBox.setVisible(isLogExpanded);
     
     // Editor fills remaining space
     layoutEditorArea();
@@ -145,10 +124,6 @@ void CodeEditor::resized()
 void CodeEditor::layoutEditorArea()
 {
     auto area = getLocalBounds();
-    
-    // Reserve space for language selector
-    area.removeFromRight(130);
-    area.removeFromTop(30);
     
     // Reserve space for status bar
     const int statusBarHeight = isLogExpanded ? 
@@ -170,6 +145,53 @@ void CodeEditor::layoutStatusBar()
     
     // Compile button on the right
     compileButton.setBounds(bounds.removeFromRight(140));
+}
+
+void CodeEditor::setTheme(const WaviateTheme& theme)
+{
+    activeTheme = theme;
+    applyTheme();
+}
+
+void CodeEditor::applyTheme()
+{
+    setColour(juce::PopupMenu::backgroundColourId, activeTheme.panelBackground);
+    setColour(juce::PopupMenu::textColourId, activeTheme.text);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, activeTheme.accent);
+    setColour(juce::PopupMenu::highlightedTextColourId, activeTheme.accentText);
+
+    auto applyButtonColours = [this](juce::TextButton& button)
+    {
+        button.setColour(juce::TextButton::buttonColourId, activeTheme.widgetBackground);
+        button.setColour(juce::TextButton::buttonOnColourId, activeTheme.accent);
+        button.setColour(juce::TextButton::textColourOffId, activeTheme.text);
+        button.setColour(juce::TextButton::textColourOnId, activeTheme.accentText);
+    };
+
+    applyButtonColours(expandLogButton);
+    applyButtonColours(compileButton);
+
+    logListBox.setColour(juce::TextEditor::backgroundColourId, activeTheme.editorBackground);
+    logListBox.setColour(juce::TextEditor::textColourId, activeTheme.editorText);
+    logListBox.setColour(juce::TextEditor::highlightColourId, activeTheme.selection);
+    logListBox.setColour(juce::TextEditor::highlightedTextColourId, activeTheme.accentText);
+    logListBox.setColour(juce::TextEditor::outlineColourId, activeTheme.outline);
+    logListBox.setColour(juce::TextEditor::focusedOutlineColourId, activeTheme.accent);
+    logListBox.setColour(juce::CaretComponent::caretColourId, activeTheme.caret);
+
+    if (editor != nullptr)
+    {
+        editor->setColour(juce::CodeEditorComponent::backgroundColourId, activeTheme.editorBackground);
+        editor->setColour(juce::CodeEditorComponent::defaultTextColourId, activeTheme.editorText);
+        editor->setColour(juce::CaretComponent::caretColourId, activeTheme.caret);
+        editor->setColour(juce::CodeEditorComponent::highlightColourId, activeTheme.selection);
+        editor->setColour(juce::CodeEditorComponent::lineNumberBackgroundId, activeTheme.lineNumberBackground);
+        editor->setColour(juce::CodeEditorComponent::lineNumberTextId, activeTheme.lineNumberText);
+        editor->setColourScheme(WaviateThemes::createCodeColourScheme(activeTheme));
+        editor->repaint();
+    }
+
+    repaint();
 }
 
 //==============================================================================
@@ -197,65 +219,10 @@ juce::String CodeEditor::getText() const
     return document.getAllContent();
 }
 
-void CodeEditor::setLanguage(const juce::String& languageExtension)
-{
-    currentLanguage = languageExtension;
-    updateLanguageSelector();
-}
-
-juce::String CodeEditor::getLanguage() const
-{
-    return currentLanguage;
-}
-
-void CodeEditor::updateLanguageSelector()
-{
-    if (!languageSelector)
-        return;
-    
-    if (currentLanguage == ".wc")
-        languageSelector->setSelectedItemIndex(0);
-    else if (currentLanguage == ".wcpp")
-        languageSelector->setSelectedItemIndex(1);
-#ifdef WAV_SCRIPT_PREMIUM
-    else if (currentLanguage == ".wrs")
-        languageSelector->setSelectedItemIndex(2);
-#endif
-}
-
-void CodeEditor::onLanguageSelected(int languageIndex)
-{
-#ifdef WAV_SCRIPT_PREMIUM
-    // Premium: all languages available
-    if (languageIndex == 0)
-        currentLanguage = ".wc";
-    else if (languageIndex == 1)
-        currentLanguage = ".wcpp";
-    else if (languageIndex == 2)
-        currentLanguage = ".wrs";
-#else
-    // Non-premium: Rust disabled
-    if (languageIndex == 0)
-        currentLanguage = ".wc";
-    else if (languageIndex == 1)
-        currentLanguage = ".wcpp";
-    else if (languageIndex == 2)
-    {
-        // Prevent selection of Rust
-        languageSelector->setSelectedItemIndex(1);
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::InfoIcon,
-            "Premium Feature",
-            "Rust support is available in Waviate Script Premium edition only."
-        );
-    }
-#endif
-}
-
 //==============================================================================
 void CodeEditor::compileCurrentSource()
 {
-    addLogMessage("Compiling " + currentLanguage + "...");
+    addLogMessage("Compiling Waviate Shading Language...");
     performCompilation();
 }
 
@@ -263,7 +230,7 @@ void CodeEditor::performCompilation()
 {
     if (audioProcessor == nullptr)
     {
-        addLogMessage("✗ Error: Processor not initialized");
+        addLogMessage("Error: Processor not initialized");
         return;
     }
     
@@ -271,10 +238,10 @@ void CodeEditor::performCompilation()
     
     try
     {
-        auto it = audioProcessor->compilers.find(currentLanguage.toStdString());
+        auto it = audioProcessor->compilers.find(compilerExtension.toStdString());
         if (it == audioProcessor->compilers.end())
         {
-            addLogMessage("Error: Compiler not found for " + currentLanguage);
+            addLogMessage("Error: Waviate Shading Language compiler not found");
             return;
         }
         
@@ -283,21 +250,33 @@ void CodeEditor::performCompilation()
         
         it->second->compileSource(sourceCode.toStdString(), outSample, outFrequency);
         
-        if (outSample != nullptr && outFrequency != nullptr)
+        if (outSample != nullptr || outFrequency != nullptr)
         {
             // Store compiled functions in processor's atomic pointers
             audioProcessor->activeSampleShader.store(outSample, std::memory_order_release);
             audioProcessor->activeFrequencyShader.store(outFrequency, std::memory_order_release);
-            addLogMessage("✓ Compilation successful!");
+
+            juce::String enabledStages;
+            if (outSample != nullptr)
+                enabledStages << "sample";
+            if (outFrequency != nullptr)
+            {
+                if (enabledStages.isNotEmpty())
+                    enabledStages << " + ";
+                enabledStages << "frequency";
+            }
+
+            addLogMessage("Compilation successful (" + enabledStages
+                + (enabledStages.contains("+") ? " stages enabled)" : " stage enabled)"));
         }
         else
         {
-            addLogMessage("✗ Compilation failed - invalid output");
+            addLogMessage("Compilation failed - no sample_process or frequency_process entry point was emitted");
         }
     }
     catch (const std::exception& e)
     {
-        addLogMessage("✗ Compilation error: " + juce::String(e.what()));
+        addLogMessage("Compilation error: " + juce::String(e.what()));
     }
 }
 
@@ -309,12 +288,17 @@ void CodeEditor::addLogMessage(const juce::String& message)
     // Keep log size reasonable
     if (logMessages.size() > 100)
         logMessages.erase(logMessages.begin());
-    
-    //logListBox.updateContent();
+
+    juce::String combinedLog;
+    for (const auto& logMessage : logMessages)
+        combinedLog << logMessage << juce::newLine;
+
+    logListBox.setText(combinedLog, juce::dontSendNotification);
+    logListBox.moveCaretToEnd();
 }
 
 void CodeEditor::clearLog()
 {
     logMessages.clear();
-    //logListBox.updateContent();
+    logListBox.clear();
 }

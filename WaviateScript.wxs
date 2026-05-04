@@ -86,6 +86,7 @@
       <Component Id="IncludeHeaders" Guid="66666666-7777-8888-9999-000000000001">
         <File Id="WaviateH" Source="SourceWaviate.h" KeyPath="yes"/>
         <File Id="WaviateHpp" Source="SourceWaviate.hpp"/>
+        <File Id="WaviateInputH" Source="SourceWaviateInput.h"/>
         <RegistryValue Root="HKLM" Key="Software\Waviate\WaviateScript\Include" 
                       Name="Path" Type="string" Value="[IncludeFolder]" KeyPath="no"/>
       </Component>
