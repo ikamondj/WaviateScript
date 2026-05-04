@@ -1,0 +1,10 @@
+This app needs helper functions for users. Things that would be useful to most audio engineers. 
+The scope of this change is just to add a bunch of useful constructs that users can automaticaly use with function calls
+many might be pure functions, some might automatically call on members of the waviate structs. 
+For example, users should have automatic access to several periodic functions. saw, square, sine, semicircle, triangle, saw tan, triangle tan, pulse, etc. between -1 and 1 with periods of 1 in the input.
+there should be some cool periodic ones that are unique. saw tan is already a cool one. basically a tangent function but it wraps from -1 to 1 and vice versa. triangle tan is similar but it reflects about y = 1 and y = -1 when passing these instead of wrapping to alternate values.
+Another one i'd like is a fractal square and a strong sine. the strong sine will use the 1/3 harmonic to get that kind of major third added bass that EDM artists use alot to get punchier basses. The fractal square is when x \in [0,0.5), f(x) = 1. when x \in [0.5,3/4), f(x)=-1. when x \in [3/4,7/8), f(x)=1. it alternates for each remaining half. you can use a fancy floating point trick to achieve this O(1) efficiently on a processor. 
+There should also be an implementation of common coherent noises all 1d. like perlin, simplex, voronoi, turbulence, ridged multi all between 0 and 1.
+Then some common audio utils people would find helpful: stuff like ADSR(a, d, s, r, t); that outputs values between 0 and 1 based on the frames for a key that's been pressed or something like that
+This change isn't about implementing functions for raw values passed to the waviate structs like time since midi note was pressed or stuff like that.
+It's about giving users highly expressive functions to give waviate a unique sound.

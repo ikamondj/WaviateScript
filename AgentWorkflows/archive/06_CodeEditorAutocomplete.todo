@@ -1,0 +1,45 @@
+Task: Add language-aware autocomplete to the WaviateScript code editor.
+
+Depends on:
+05_FixCodeEditorFontAndCaret.todo should be complete, or the editor should already have reliable font/caret behavior.
+
+Background:
+The editor currently wraps juce::CodeEditorComponent with a CPlusPlusCodeTokeniser. It does not autocomplete WaviateScript shader APIs. The compiler path in Source/ClangExternalCompiler.h prepends hidden text before compiling user code:
+- C++ mode prepends #include "WaviateInput.hpp"
+
+Autocomplete should make those implicit APIs feel built in. Users should not need to see or type hidden includes or prelude code.
+
+Requirements:
+- Add full autocomplete support for Source/CodeEditor.* while keeping the editor reusable by PluginEditor.
+- Keep the active language driven by setFileExtension:
+  - .wlsl uses C++ shader completions.
+- Build a shared language/prelude model instead of duplicating hidden compiler behavior:
+  - Represent the implicit C++ prelude currently embedded in ClangExternalCompiler.h.
+  - Include symbols from WaviateInput.hpp that user shaders can use.
+  - Include WaviateScript built-ins such as sample_process and frequency_process signatures where useful.
+  - Keep this model in a normal source/header pair so the compiler and editor can eventually share it.
+- Implement a completion UI:
+  - Trigger on Ctrl+Space/Cmd+Space.
+  - Trigger after typing identifier characters or member access where practical.
+  - Allow keyboard navigation with arrows, Enter/Tab to accept, and Escape to dismiss.
+  - Insert only the completion text/snippet needed in the user's visible file.
+  - Do not insert hidden includes into the user's document.
+- Make completions context-aware enough to be useful:
+  - Filter by current typed prefix.
+  - Offer C++ language keywords and types.
+  - Offer fields after input-> for C++ shader signatures.
+  - Use C++ syntax for .wlsl files.
+- Keep autocomplete independent from compiling the shader on every keystroke.
+  - A lightweight symbol table or parsed header/prelude metadata is preferred.
+  - If Clang analysis is introduced, keep it optional and do not block typing.
+- Update or add docs/comments only where they clarify the completion architecture.
+
+Acceptance criteria:
+- Creating/opening a .wlsl file gives C++ completions for shader functions, WaviateSampleInput, WaviateFrequencyInput, and visible fields/functions from the hidden C++ prelude.
+- Accepting a completion inserts text at the correct caret location without corrupting the CodeDocument.
+- Autocomplete can be dismissed and does not interfere with normal typing.
+
+Testing:
+- Manually test .wlsl files in the standalone app.
+- Add lightweight unit tests for the completion filtering/model if the project has or gains a practical test harness.
+- If runtime UI testing is not possible, document what was compiled and what still needs manual verification.

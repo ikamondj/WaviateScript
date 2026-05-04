@@ -1,0 +1,32 @@
+Task: Fix the code editor font and caret alignment.
+
+Background:
+Source/CodeEditor.cpp currently creates a juce::CodeEditorComponent and calls editor->setFont(juce::Font(14.0f)). That can select a proportional UI font, which makes a code editor feel wrong and can cause the caret to appear out of alignment with the actual typing location. The editor should use a code-friendly monospaced font with metrics that JUCE's CodeEditorComponent can measure consistently.
+
+Requirements:
+- Update Source/CodeEditor.h and Source/CodeEditor.cpp only unless another directly related file is required.
+- Use a JUCE 8.0.12-compatible monospaced font setup.
+  - Prefer the JUCE default monospaced font name or a safe platform fallback chain.
+  - Do not hard-require a font that may be missing on Windows or macOS.
+  - Avoid the current proportional/default constructor pattern.
+- Keep the editor visually code-oriented:
+  - Stable 14px-ish readable size unless a small adjustment is needed for caret correctness.
+  - Monospaced glyphs.
+  - Tabs remain predictable with the existing 4-space behavior unless there is a concrete reason to change it.
+- Fix caret/typing alignment:
+  - Verify that the caret lands on the typed character position for normal text, indentation, tabs/spaces, and long lines.
+  - Check that line numbers do not offset the typed text incorrectly.
+  - Check that clicking in the editor places the caret where text will be inserted.
+- Keep existing behavior for setText, getText, setFileExtension, ensureEditorCreated, and resized.
+- Avoid a broad editor redesign in this task.
+
+Acceptance criteria:
+- The editor displays using a monospaced code font on Windows.
+- The implementation is reasonable for macOS too, even if testing is only done on Windows.
+- The caret position matches the actual insertion point while typing.
+- Existing empty-state/open/new-file flows still show the editor correctly.
+
+Testing:
+- Run the app/standalone plugin if available and manually type sample code with indentation.
+- If the app cannot be launched, add a focused explanation of what was checked and why runtime verification was not possible.
+- Build or compile the touched files if the local CMake/Projucer build path is available.

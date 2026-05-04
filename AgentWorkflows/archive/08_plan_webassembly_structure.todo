@@ -1,0 +1,128 @@
+Task: Create an agentic implementation plan for adding WebAssembly shader execution to WaviateScript.
+
+Mode:
+This is a planning-only workflow. When an agent runs this todo, it must not implement WebAssembly support, edit source code, edit docs, change build files, or refactor the app. Its only write output should be new, smaller, manageable `.todo` files under `AgentWorkflows/todo/`.
+
+Role:
+Act as a principal software engineer, project manager, and software engineering manager:
+- Principal engineer: capture the architecture, constraints, risks, and implementation boundaries clearly enough that future tasks can be executed safely.
+- Project manager: split the work into ordered, dependency-aware milestones with clear acceptance criteria.
+- Engineering manager: keep tasks small enough for separate agents to complete, review, and test without stepping on each other.
+
+Background:
+WaviateScript currently compiles user shaders with LLVM/Clang into a DLL or in-process function pointer, then the host calls exported shader functions in tight loops:
+- `sample_process` is called per sample or per sample/channel context.
+- `frequency_process` is called per frequency bin or per bin/channel context.
+
+That calling model is acceptable for native in-process functions, but it is not acceptable for WebAssembly. A WebAssembly runtime introduces a VM boundary. Calling from the host into the VM once per sample or once per frequency bin would cross that boundary many times per audio block and create avoidable real-time overhead.
+
+The WebAssembly path must instead compile a block-level execution wrapper. The shader compilation pipeline should generate or inject loop outlines around the user's sample and frequency shader functions so the host crosses into WebAssembly once per block or once per larger processing unit, not once per sample or frequency bin. The frequency and sample inputs must be represented inside the compiled block-level code, with host-provided block buffers, input metadata, output buffers, and state made available through a well-defined WebAssembly ABI and memory layout.
+
+Known semantic constraint:
+When both sample and frequency shaders exist in one plugin instance, execution order is fixed:
+1. sample shader
+2. frequency shader
+
+The WebAssembly plan must preserve that behavior.
+
+Goal:
+Create a complete project scope outline and implementation-detail plan by writing follow-up todo files. The follow-up todos should be ready for future agents to execute one at a time.
+
+Allowed edits during this workflow:
+- Create new files only in `AgentWorkflows/todo/`.
+- Prefer names that sort after this planning task, for example:
+  - `08a_wasm_scope_and_architecture.todo`
+  - `08b_wasm_block_abi_and_memory.todo`
+  - `08c_wasm_shader_wrapper_codegen.todo`
+  - `08d_wasm_toolchain_and_build.todo`
+  - `08e_wasm_runtime_integration.todo`
+  - `08f_wasm_state_and_input_mapping.todo`
+  - `08g_wasm_testing_and_benchmarks.todo`
+  - `08h_wasm_docs_and_migration.todo`
+- If more or fewer files are appropriate after inspecting the repo, adjust the list, but keep each todo focused and manageable.
+
+Disallowed edits during this workflow:
+- Do not edit `Source/`, `Docs/`, `CMakeLists.txt`, `.jucer`, installer files, README files, generated files, or existing todo files other than this one being executed by the workflow runner.
+- Do not implement a WebAssembly runtime.
+- Do not add dependencies.
+- Do not delete files.
+- Do not make code formatting or cleanup changes.
+
+Required investigation:
+Before writing the follow-up todos, inspect the current project enough to understand:
+- Where native shader compilation currently happens.
+- Where the host calls sample and frequency shader functions in loops.
+- How `WaviateSampleInput`, `WaviateFrequencyInput`, state readers/writers, and output buffers are represented.
+- How public vs premium features are gated.
+- How current build configuration handles LLVM/Clang and plugin targets.
+- Any existing docs that describe shader execution order, input APIs, or compilation.
+
+Planning requirements:
+The generated todo set must cover the full WebAssembly implementation scope, including:
+- A project architecture outline for native vs WebAssembly shader execution paths.
+- A block-level WebAssembly ABI that avoids per-sample and per-bin host-to-VM calls.
+- A linear-memory layout for block inputs, sidechain inputs, MIDI/controller/OSC state where applicable, sample history, current sample data, frequency bins, output buffers, and mutable shader state.
+- A generated or injected wrapper strategy that keeps user-facing `sample_process` and `frequency_process` authoring simple while compiling WebAssembly entrypoints that run the loops inside the module.
+- Exact loop-order expectations for sample and frequency processing, including sample-then-frequency behavior when both functions exist.
+- How to represent current per-call context fields such as sample index, block position, channel, frequency bin, sample rate, app sample counter, and current output data inside the block wrapper.
+- How frequency-domain processing interacts with FFT/windowing/overlap-add and where that logic remains host-side vs module-side.
+- How host code should instantiate, cache, reuse, and tear down WebAssembly modules without allocating or compiling on the audio thread.
+- How to handle real-time constraints, memory growth policy, deterministic execution, runtime traps, error reporting, and fallback to native compilation.
+- Toolchain choices and build integration for compiling C/C++ shader code to WebAssembly, including LLVM/Clang target configuration, exports, imports, sysroot/runtime assumptions, and debug information.
+- Whether Rust WebAssembly support is in scope immediately or should be planned as a later premium/public task.
+- Runtime selection criteria, such as Wasmtime, WAMR, wasm3, or another embeddable runtime, with attention to plugin distribution, licensing, binary size, startup time, real-time safety, and platform support.
+- Test strategy for correctness, regression coverage, and performance benchmarks comparing native per-call execution with WebAssembly block-level execution.
+- Migration and documentation tasks for developers and users.
+
+Expected generated todo format:
+Each generated todo should include:
+- `Task`
+- `Background`
+- `Dependencies`
+- `Requirements`
+- `Acceptance criteria`
+- `Testing`
+- `Out of scope`
+- Any important repo paths the implementing agent should inspect.
+
+Decomposition rules:
+- Keep each todo small enough that one future agent can complete it in a focused pass.
+- Make dependencies explicit. For example, wrapper codegen should depend on the block ABI being defined.
+- Separate planning/design work from implementation work only when the design decision is large enough to block several tasks.
+- Avoid vague tasks such as "add wasm support". Every task should name concrete files or subsystems to inspect and expected outputs.
+- Include risk notes inside the relevant todo when the work touches audio-thread behavior, ABI compatibility, memory safety, or plugin distribution.
+- Do not create tasks that require per-sample or per-bin host-to-VM calls as the primary WebAssembly execution model.
+
+Suggested todo breakdown:
+The agent may refine this list after inspection, but the final todo set should cover these areas:
+
+1. WebAssembly scope and architecture
+   Define the target architecture, native/WebAssembly execution split, runtime lifecycle, fallback behavior, public/premium scope, and major risks.
+
+2. Block ABI and memory layout
+   Define the host/module contract for block-level processing, including all input/output/state buffers and versioning.
+
+3. Shader wrapper and loop code generation
+   Plan how compilation injects block-level entrypoints that call user `sample_process` and `frequency_process` internally, preserving current authoring APIs and sample-then-frequency order.
+
+4. Toolchain and build integration
+   Plan Clang/LLVM WebAssembly target setup, generated artifacts, exports/imports, runtime library assumptions, CMake/JUCE integration, and packaging implications.
+
+5. Runtime integration in the audio engine
+   Plan module loading, instantiation, memory binding, preallocation, invocation, error handling, and audio-thread-safe execution.
+
+6. State, input, and feature mapping
+   Plan how existing C/C++ input structs, state writers, MIDI, sidechain, history, current sample data, frequency data, and premium-only inputs map into the block ABI.
+
+7. Correctness tests and performance benchmarks
+   Plan unit, integration, golden-output, trap/error, and benchmark coverage proving that WebAssembly crosses the VM boundary at block granularity.
+
+8. Documentation and migration
+   Plan user-facing and developer-facing docs explaining WebAssembly behavior, constraints, build setup, execution order, and migration from native shader execution.
+
+Completion criteria for this planning workflow:
+- New todo files exist under `AgentWorkflows/todo/` and together cover the full WebAssembly implementation scope.
+- No implementation files were changed.
+- The generated todo files make it clear that WebAssembly processing must happen at block granularity, not by calling into the VM once per sample or frequency bin.
+- The generated todo files are dependency-aware and can be handed to future agents individually.
+- The final response should list the todo files created and summarize the execution order in which they should be run.
