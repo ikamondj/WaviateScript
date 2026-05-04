@@ -8,8 +8,15 @@
   ==============================================================================
 */
 
+#include <array>
+
 #include "CodeEditor.h"
 #include "PluginProcessor.h"
+
+namespace
+{
+    constexpr std::array<int, 10> visualizerSamplesPerBlockOptions { 2, 3, 4, 6, 8, 12, 16, 32, 64, 128 };
+}
 
 //==============================================================================
 CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
@@ -48,13 +55,29 @@ CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
     statusBar.addAndMakeVisible(compileButton);
     compileButton.onClick = [this] { compileCurrentSource(); };
 
+    visualizerScaleSlider.setSliderStyle(juce::Slider::LinearVertical);
+    visualizerScaleSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    visualizerScaleSlider.setRange(0.0, static_cast<double>(visualizerSamplesPerBlockOptions.size() - 1), 1.0);
+    visualizerScaleSlider.setValue(visualizerSamplesPerBlockIndex, juce::dontSendNotification);
+    visualizerScaleSlider.setTooltip("Samples per block");
+    visualizerScaleSlider.onValueChange = [this] {
+        applyVisualizerScaleIndex(juce::roundToInt(visualizerScaleSlider.getValue()));
+    };
+
+    visualizerScaleValueLabel.setJustificationType(juce::Justification::centred);
+    visualizerScaleValueLabel.setInterceptsMouseClicks(false, false);
+
+    visualizerWheelOverlay.onWheel = [this](const juce::MouseWheelDetails& wheel) {
+        if (wheel.deltaY != 0.0f)
+            nudgeVisualizerScale(wheel.deltaY > 0.0f ? 1 : -1);
+    };
+    visualizerWheelOverlay.setRepaintsOnMouseActivity(false);
+
     logListBox.setMultiLine(true);
     logListBox.setReadOnly(true);
     logListBox.setScrollbarsShown(true);
     addChildComponent(logListBox);
     
-    addKeyListener(this);
-    updateVisualizerButton();
     document.addListener(this);
     addKeyListener(this);
     
@@ -63,10 +86,14 @@ CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
     
     updatePlayPauseButton();
     updateVisualizerButton();
+    updateVisualizerScaleLabel();
     applyTheme();
 }
 
-CodeEditor::~CodeEditor() = default;
+CodeEditor::~CodeEditor()
+{
+    document.removeListener(this);
+}
 
 //==============================================================================
 void CodeEditor::setProcessor(WaviateScriptAudioProcessor& processor)
@@ -78,11 +105,19 @@ void CodeEditor::setProcessor(WaviateScriptAudioProcessor& processor)
 void CodeEditor::setVisualizer(juce::AudioVisualiserComponent& visualizerComponent)
 {
     visualizer = &visualizerComponent;
-    visualizer->setSamplesPerBlock(5);
     visualizer->setColours(activeTheme.visualizerBackground, activeTheme.visualizerWaveform);
+    applyVisualizerScaleIndex(visualizerSamplesPerBlockIndex);
     addChildComponent(*visualizer);
+    addChildComponent(visualizerScaleSlider);
+    addChildComponent(visualizerScaleValueLabel);
+    addChildComponent(visualizerWheelOverlay);
     updateVisualizerButton();
     resized();
+}
+
+void CodeEditor::setOnTextChanged(std::function<void()> callback)
+{
+    onTextChanged = std::move(callback);
 }
 
 //==============================================================================
@@ -151,11 +186,20 @@ void CodeEditor::resized()
         logArea = area.removeFromBottom(juce::jmin(expandedLogHeight, area.getHeight()));
 
     const auto visualizerHeight = getVisualizerHeight(area.getHeight());
-    const auto visualizerArea = area.removeFromBottom(visualizerHeight);
+    auto visualizerArea = area.removeFromBottom(visualizerHeight);
     if (visualizer != nullptr)
     {
+        auto scaleArea = visualizerArea.removeFromRight(juce::jmin(visualizerScaleControlWidth, visualizerArea.getWidth()));
+        scaleArea.reduce(3, 3);
+
+        visualizerScaleValueLabel.setBounds(scaleArea.removeFromTop(20));
+        visualizerScaleSlider.setBounds(scaleArea);
         visualizer->setBounds(visualizerArea);
+        visualizerWheelOverlay.setBounds(visualizerArea);
         visualizer->setVisible(isVisualizerExpanded);
+        visualizerScaleSlider.setVisible(isVisualizerExpanded);
+        visualizerScaleValueLabel.setVisible(isVisualizerExpanded);
+        visualizerWheelOverlay.setVisible(isVisualizerExpanded);
     }
 
     auto statusArea = area.removeFromBottom(juce::jmin(collapsedStatusBarHeight, area.getHeight()));
@@ -238,6 +282,12 @@ void CodeEditor::applyTheme()
     applyButtonColours(playPauseButton);
     applyButtonColours(compileButton);
 
+    visualizerScaleSlider.setColour(juce::Slider::backgroundColourId, activeTheme.widgetBackground);
+    visualizerScaleSlider.setColour(juce::Slider::trackColourId, activeTheme.accent);
+    visualizerScaleSlider.setColour(juce::Slider::thumbColourId, activeTheme.accentText);
+    visualizerScaleValueLabel.setColour(juce::Label::textColourId, activeTheme.mutedText);
+    visualizerScaleValueLabel.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+
     logListBox.setColour(juce::TextEditor::backgroundColourId, activeTheme.editorBackground);
     logListBox.setColour(juce::TextEditor::textColourId, activeTheme.editorText);
     logListBox.setColour(juce::TextEditor::highlightColourId, activeTheme.selection);
@@ -271,6 +321,10 @@ void CodeEditor::updateVisualizerButton()
 
     if (visualizer != nullptr)
         visualizer->setVisible(isVisualizerExpanded);
+
+    visualizerScaleSlider.setVisible(isVisualizerExpanded && visualizer != nullptr);
+    visualizerScaleValueLabel.setVisible(isVisualizerExpanded && visualizer != nullptr);
+    visualizerWheelOverlay.setVisible(isVisualizerExpanded && visualizer != nullptr);
 }
 
 void CodeEditor::updatePlayPauseButton()
@@ -283,6 +337,41 @@ void CodeEditor::updatePlayPauseButton()
     playPauseButton.setTooltip(isPlaying ? "Pause processing" : "Play processing");
 }
 
+void CodeEditor::applyVisualizerScaleIndex(int index)
+{
+    visualizerSamplesPerBlockIndex = juce::jlimit(0,
+                                                  static_cast<int>(visualizerSamplesPerBlockOptions.size()) - 1,
+                                                  index);
+    visualizerScaleSlider.setValue(visualizerSamplesPerBlockIndex, juce::dontSendNotification);
+
+    if (visualizer != nullptr)
+        visualizer->setSamplesPerBlock(getVisualizerSamplesPerBlock());
+
+    updateVisualizerScaleLabel();
+}
+
+void CodeEditor::nudgeVisualizerScale(int direction)
+{
+    if (direction == 0)
+        return;
+
+    applyVisualizerScaleIndex(visualizerSamplesPerBlockIndex + (direction > 0 ? 1 : -1));
+}
+
+int CodeEditor::getVisualizerSamplesPerBlock() const
+{
+    return visualizerSamplesPerBlockOptions[static_cast<size_t>(
+        juce::jlimit(0, static_cast<int>(visualizerSamplesPerBlockOptions.size()) - 1, visualizerSamplesPerBlockIndex))];
+}
+
+void CodeEditor::updateVisualizerScaleLabel()
+{
+    const auto value = getVisualizerSamplesPerBlock();
+    visualizerScaleValueLabel.setText(juce::String(value), juce::dontSendNotification);
+    visualizerScaleValueLabel.setTooltip("Samples per block: " + juce::String(value));
+    visualizerScaleSlider.setTooltip("Samples per block: " + juce::String(value));
+}
+
 //==============================================================================
 bool CodeEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 {
@@ -292,9 +381,29 @@ bool CodeEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
         compileCurrentSource();
         return true;
     }
-    
-    // Ctrl+Space: Toggle play/pause (handled by PluginEditor)
-    // Note: This is handled by the parent component, so we don't consume it here
+
+    if (completionMenu != nullptr && completionMenu->isOpen() && completionMenu->keyPressed(key, editor.get()))
+        return true;
+
+    const bool isCompletionOrPlaybackShortcut =
+        (key.getModifiers().isCtrlDown() || key.getModifiers().isCommandDown())
+        && key.getKeyCode() == juce::KeyPress::spaceKey;
+
+    if (isCompletionOrPlaybackShortcut)
+    {
+        if (editor != nullptr && editor->hasKeyboardFocus(true))
+        {
+            updateCompletions();
+            return true;
+        }
+
+        if (audioProcessor != nullptr)
+        {
+            audioProcessor->setProcessingEnabled(! audioProcessor->isProcessingEnabled());
+            updatePlayPauseButton();
+            return true;
+        }
+    }
     
     // Ctrl+L: Toggle log viewer
     if (key.getModifiers().isCtrlDown() && (key.getKeyCode() == juce::KeyPress::createFromDescription("ctrl+l").getKeyCode()))
@@ -315,15 +424,29 @@ bool CodeEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
         repaint();
         return true;
     }
-    
-    // Ctrl+Space: Show autocomplete (when editor has focus)
-    if (key.getModifiers().isCtrlDown() && (key.getKeyCode() == juce::KeyPress::spaceKey))
-    {
-        updateCompletions();
-        return true;
-    }
-    
+
     return false;
+}
+
+void CodeEditor::codeDocumentTextInserted(const juce::String& newText, int)
+{
+    if (onTextChanged != nullptr)
+        onTextChanged();
+    
+    // Trigger autocompletion for single character inserts
+    if (newText.length() == 1) {
+        triggerAutocompletionIfApplicable(newText[0]);
+    }
+}
+
+void CodeEditor::codeDocumentTextDeleted(int, int)
+{
+    if (onTextChanged != nullptr)
+        onTextChanged();
+    
+    // Hide completions if they're open
+    if (completionMenu != nullptr && completionMenu->isOpen())
+        completionMenu->hideCompletions();
 }
 
 //==============================================================================
@@ -423,40 +546,44 @@ void CodeEditor::clearLog()
 }
 
 //==============================================================================
-// Autocomplete methods
 void CodeEditor::updateCompletions()
 {
     if (editor == nullptr || completionProvider == nullptr || completionMenu == nullptr)
         return;
-    
+
     const auto sourceCode = getText();
     const auto caretPos = editor->getCaretPos();
     const int caretOffset = caretPos.getPosition();
-    
+
     const auto completions = completionProvider->getCompletions(sourceCode, caretOffset);
-    
+
     if (completions.empty())
     {
         completionMenu->hideCompletions();
     }
     else
     {
-        completionMenu->showCompletions(completions, *editor, caretOffset);
+        completionMenu->showCompletions(completions);
     }
 }
 
 void CodeEditor::triggerAutocompletionIfApplicable(juce::juce_wchar createdChar)
 {
-    // Show completion on alphanumeric, underscore, or member access operators
-    if (std::isalnum(createdChar) || createdChar == '_' || createdChar == '.' || createdChar == '>')
+    if (editor == nullptr || completionProvider == nullptr || completionMenu == nullptr)
+        return;
+
+    // Show completion menu after typing alphanumeric, underscore, or member access operators
+    const bool isIdentifierChar = juce::CharacterFunctions::isLetterOrDigit(createdChar) || createdChar == '_';
+    const bool isMemberAccess = createdChar == '.' || createdChar == '>';
+
+    if (isIdentifierChar || isMemberAccess)
     {
         updateCompletions();
     }
     else
     {
-        // Hide completion menu for other characters
-        if (completionMenu != nullptr)
-            completionMenu->hideCompletions();
+        // Hide completions for other characters
+        completionMenu->hideCompletions();
     }
 }
 
@@ -464,46 +591,28 @@ void CodeEditor::handleCompletionAccepted(const CompletionItem& item)
 {
     if (editor == nullptr)
         return;
-    
+
     const auto caretPos = editor->getCaretPos();
     const int caretOffset = caretPos.getPosition();
     const auto sourceCode = getText();
-    
+
     // Extract prefix (word being completed)
     int prefixStart = caretOffset;
-    while (prefixStart > 0 && (std::isalnum(sourceCode[prefixStart - 1]) || sourceCode[prefixStart - 1] == '_'))
-        prefixStart--;
-    
+    while (prefixStart > 0 && (juce::CharacterFunctions::isLetterOrDigit(sourceCode[prefixStart - 1]) || sourceCode[prefixStart - 1] == '_'))
+        --prefixStart;
+
     const int prefixLength = caretOffset - prefixStart;
-    
+
     // Delete prefix and insert completion
     document.deleteSection(prefixStart, prefixLength);
     document.insertText(prefixStart, item.insertText);
-    
+
     // Position caret after insertion
     const int newCaretOffset = prefixStart + item.insertText.length() + item.cursorOffsetAfterInsert;
     const juce::CodeDocument::Position newPos(document, newCaretOffset);
     editor->moveCaretTo(newPos, false);
-    
+
     // Hide completion menu
-    if (completionMenu != nullptr)
-        completionMenu->hideCompletions();
-}
-
-//==============================================================================
-// CodeDocument::Listener implementation
-void CodeEditor::codeDocumentTextInserted(const juce::String& newText, int insertIndex)
-{
-    // Trigger autocompletion for single character inserts
-    if (newText.length() == 1)
-    {
-        triggerAutocompletionIfApplicable(newText[0]);
-    }
-}
-
-void CodeEditor::codeDocumentTextDeleted(int startIndex, int endIndex)
-{
-    // Hide completion menu when text is deleted
     if (completionMenu != nullptr)
         completionMenu->hideCompletions();
 }

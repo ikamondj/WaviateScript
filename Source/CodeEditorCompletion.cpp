@@ -38,15 +38,15 @@ std::vector<CompletionItem> CompletionProvider::getCompletions(const juce::Strin
 std::vector<CompletionItem> CompletionProvider::getMemberCompletions(const juce::String& memberOwnerType) {
     std::vector<CompletionItem> result;
 
-    if (memberOwnerType == "WaviateSample" || memberOwnerType == "WaviateFrequency" || memberOwnerType == "WaviateCore") {
+    if (memberOwnerType == "wav" || memberOwnerType == "WaviateSample" || memberOwnerType == "WaviateFrequency" || memberOwnerType == "WaviateCore") {
         result.insert(result.end(), waviateCoreMembers.begin(), waviateCoreMembers.end());
     }
 
-    if (memberOwnerType == "WaviateSample") {
+    if (memberOwnerType == "wav" || memberOwnerType == "WaviateSample") {
         result.insert(result.end(), waviateSampleMembers.begin(), waviateSampleMembers.end());
     }
 
-    if (memberOwnerType == "WaviateFrequency") {
+    if (memberOwnerType == "wav" || memberOwnerType == "WaviateFrequency") {
         result.insert(result.end(), waviateFrequencyMembers.begin(), waviateFrequencyMembers.end());
     }
 
@@ -54,7 +54,7 @@ std::vector<CompletionItem> CompletionProvider::getMemberCompletions(const juce:
         result.insert(result.end(), waviateSampleInputFields.begin(), waviateSampleInputFields.end());
     }
 
-    if (memberOwnerType == "WaviateFrequencyInput") {
+    if (memberOwnerType == "WaviateFrequencyInput" || memberOwnerType == "input") {
         result.insert(result.end(), waviateFrequencyInputFields.begin(), waviateFrequencyInputFields.end());
     }
 
@@ -80,57 +80,40 @@ juce::String CompletionProvider::extractCompletionContext(const juce::String& so
                                                            juce::String& outMemberOwner) {
     outMemberOwner.clear();
 
-    if (caretPos <= 0 || caretPos > sourceCode.length())
+    if (sourceCode.isEmpty())
         return {};
 
-    int endPos = caretPos - 1;
+    caretPos = juce::jlimit(0, sourceCode.length(), caretPos);
 
-    // Skip whitespace backwards from caret
-    while (endPos >= 0 && juce::CharacterFunctions::isWhitespace(sourceCode[endPos]))
-        --endPos;
+    int prefixStart = caretPos;
+    while (prefixStart > 0 && isIdentifierChar(sourceCode[prefixStart - 1]))
+        --prefixStart;
 
-    if (endPos < 0)
-        return {};
+    const auto prefix = sourceCode.substring(prefixStart, caretPos);
 
-    // Check for member access operators (. or ->)
-    if (sourceCode[endPos] == '.' || (endPos > 0 && sourceCode[endPos - 1] == '-' && sourceCode[endPos] == '>')) {
-        // Skip the operator
-        if (sourceCode[endPos] == '>') {
-            endPos -= 2; // Skip ->
-        } else {
-            --endPos; // Skip .
-        }
+    int operatorEnd = prefixStart - 1;
+    while (operatorEnd >= 0 && juce::CharacterFunctions::isWhitespace(sourceCode[operatorEnd]))
+        --operatorEnd;
 
-        // Skip whitespace before the operator
-        while (endPos >= 0 && juce::CharacterFunctions::isWhitespace(sourceCode[endPos]))
-            --endPos;
+    const bool isDotAccess = operatorEnd >= 0 && sourceCode[operatorEnd] == '.';
+    const bool isArrowAccess = operatorEnd >= 1 && sourceCode[operatorEnd - 1] == '-' && sourceCode[operatorEnd] == '>';
 
-        if (endPos < 0)
-            return {};
+    if (! isDotAccess && ! isArrowAccess)
+        return prefix;
 
-        // Extract the identifier before the operator
-        if (isIdentifierChar(sourceCode[endPos])) {
-            int startPos = endPos;
-            while (startPos > 0 && isIdentifierChar(sourceCode[startPos - 1]))
-                --startPos;
+    int ownerEnd = isDotAccess ? operatorEnd - 1 : operatorEnd - 2;
+    while (ownerEnd >= 0 && juce::CharacterFunctions::isWhitespace(sourceCode[ownerEnd]))
+        --ownerEnd;
 
-            outMemberOwner = sourceCode.substring(startPos, endPos + 1);
-            return {}; // No prefix for member completions
-        }
+    if (ownerEnd < 0 || ! isIdentifierChar(sourceCode[ownerEnd]))
+        return prefix;
 
-        return {};
-    }
+    int ownerStart = ownerEnd;
+    while (ownerStart > 0 && isIdentifierChar(sourceCode[ownerStart - 1]))
+        --ownerStart;
 
-    // Extract identifier for global completion (no member access)
-    if (isIdentifierChar(sourceCode[endPos])) {
-        int startPos = endPos;
-        while (startPos > 0 && isIdentifierChar(sourceCode[startPos - 1]))
-            --startPos;
-
-        return sourceCode.substring(startPos, endPos + 1);
-    }
-
-    return {};
+    outMemberOwner = sourceCode.substring(ownerStart, ownerEnd + 1);
+    return prefix;
 }
 
 void CompletionProvider::buildWaviateCoreMembers() {
@@ -275,7 +258,7 @@ void CompletionProvider::buildGlobalSymbols() {
 }
 
 bool CompletionProvider::isIdentifierChar(juce::juce_wchar c) {
-    return juce::CharacterFunctions::isAlphaNumeric(c) || c == '_';
+    return juce::CharacterFunctions::isLetterOrDigit(c) || c == '_';
 }
 
 std::vector<CompletionItem> CompletionProvider::filterByPrefix(const std::vector<CompletionItem>& items,
@@ -331,17 +314,26 @@ void CompletionPopupMenu::showCompletions(const std::vector<CompletionItem>& ite
     completionItems = items;
     selectedIndex = 0;
 
-    if (editor == nullptr || completionItems.empty())
+    if (editor == nullptr || completionItems.empty()) {
+        hideCompletions();
         return;
+    }
 
     // Position menu at caret
-    auto caretPos = editor->getCaretPos();
-    auto screenBounds = editor->localPointToGlobal(caretPos);
-    
-    setBounds(screenBounds.x, screenBounds.y + editor->getLineHeight(), 
-              menuWidth, juce::jmin(static_cast<int>(completionItems.size()), maxVisibleItems) * itemHeight);
+    const auto caretBounds = editor->getCharacterBounds(editor->getCaretPos());
+    const auto popupPos = getParentComponent() != nullptr
+        ? getParentComponent()->getLocalPoint(editor, caretBounds.getBottomLeft())
+        : caretBounds.getBottomLeft();
+    const auto popupHeight = juce::jmin(static_cast<int>(completionItems.size()), maxVisibleItems) * itemHeight;
+    auto popupBounds = juce::Rectangle<int>(popupPos.x, popupPos.y, menuWidth, popupHeight);
+
+    if (auto* parent = getParentComponent())
+        popupBounds = popupBounds.constrainedWithin(parent->getLocalBounds());
+
+    setBounds(popupBounds);
 
     setVisible(true);
+    toFront(false);
     repaint();
 }
 

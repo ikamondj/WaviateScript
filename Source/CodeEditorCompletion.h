@@ -1,20 +1,24 @@
 /*
   ==============================================================================
 
-    CodeEditorCompletion.h - Autocomplete provider for Waviate Shading Language
+    CodeEditorCompletion.h - C++ autocomplete provider for Waviate Shading Language.
+
+    Provides symbol completion for WaviateSample, WaviateFrequency, WaviateCore APIs
+    and C++ keywords extracted from the embedded prelude in ClangExternalCompiler.h.
 
   ==============================================================================
 */
 
 #pragma once
 
-#include <juce_gui_extra/juce_gui_extra.h>
-#include <vector>
 #include <functional>
+#include <vector>
 
-//==============================================================================
-// CompletionItem - Represents a single completion suggestion
-//==============================================================================
+#include <JuceHeader.h>
+
+/**
+ * Represents a single completion suggestion.
+ */
 struct CompletionItem
 {
     enum class Kind
@@ -29,96 +33,83 @@ struct CompletionItem
         Variable
     };
 
-    juce::String name;              // Symbol identifier
-    juce::String displayText;       // What shows in UI dropdown
-    juce::String insertText;        // Text to insert (may include ${1:...} for cursor position)
-    int cursorOffsetAfterInsert = 0; // How much to move cursor after insertion
-    Kind kind = Kind::Function;     // Type of completion
-    juce::String documentation;     // Tooltip/help text
+    juce::String name;
+    juce::String displayText;
+    juce::String insertText;
+    int cursorOffsetAfterInsert = 0;
+    Kind kind = Kind::Function;
+    juce::String documentation;
 };
 
-//==============================================================================
-// CompletionProvider - Symbol database and filtering logic
-//==============================================================================
+/**
+ * Completion provider for Waviate Shading Language C++ code.
+ */
 class CompletionProvider
 {
 public:
     CompletionProvider();
     ~CompletionProvider() = default;
 
-    // Main entry point: get completions at a specific position
     std::vector<CompletionItem> getCompletions(const juce::String& sourceCode, int caretPos);
-
-    // Get completions for member access (e.g., wav.method())
     std::vector<CompletionItem> getMemberCompletions(const juce::String& memberOwnerType);
-
-    // Get global completions (keywords, types, functions)
     std::vector<CompletionItem> getGlobalCompletions(const juce::String& prefix = "");
-
-    // Extract completion context from source code
-    // Returns prefix (what's being typed), updates memberOwner if accessing a member
-    juce::String extractCompletionContext(const juce::String& sourceCode, int caretPos, juce::String& memberOwner);
+    juce::String extractCompletionContext(const juce::String& sourceCode, int caretPos, juce::String& outMemberOwner);
 
 private:
-    // Symbol database builders
     void buildWaviateCoreMembers();
     void buildWaviateSampleMembers();
     void buildWaviateFrequencyMembers();
     void buildStructFields();
     void buildGlobalSymbols();
 
-    // Helper methods
-    std::vector<CompletionItem> filterByPrefix(const std::vector<CompletionItem>& items, const juce::String& prefix);
-    std::vector<CompletionItem> sortByRelevance(const std::vector<CompletionItem>& items, const juce::String& prefix);
+    static bool isIdentifierChar(juce::juce_wchar c);
+    static std::vector<CompletionItem> filterByPrefix(const std::vector<CompletionItem>& items,
+                                                       const juce::String& prefix);
+    static std::vector<CompletionItem> sortByRelevance(const std::vector<CompletionItem>& items,
+                                                        const juce::String& prefix);
 
-    // Symbol collections
     std::vector<CompletionItem> waviateCoreMembers;
     std::vector<CompletionItem> waviateSampleMembers;
     std::vector<CompletionItem> waviateFrequencyMembers;
-    std::vector<CompletionItem> waviateInputMembers;
-    std::vector<CompletionItem> waviateComplexMembers;
-    std::vector<CompletionItem> globalTypes;
-    std::vector<CompletionItem> globalKeywords;
+    std::vector<CompletionItem> waviateSampleInputFields;
+    std::vector<CompletionItem> waviateFrequencyInputFields;
+    std::vector<CompletionItem> waviateComplexFields;
     std::vector<CompletionItem> globalFunctions;
+    std::vector<CompletionItem> globalKeywords;
+    std::vector<CompletionItem> globalTypes;
 };
 
-//==============================================================================
-// CompletionPopupMenu - UI component for displaying suggestions
-//==============================================================================
-class CompletionPopupMenu : public juce::Component, public juce::KeyListener
+/**
+ * Completion popup menu displayed in the editor.
+ */
+class CompletionPopupMenu : public juce::Component,
+                            public juce::KeyListener
 {
 public:
-    explicit CompletionPopupMenu(juce::CodeEditorComponent* editor);
-    ~CompletionPopupMenu() override = default;
+    explicit CompletionPopupMenu(juce::CodeEditorComponent* editorComponent);
+    ~CompletionPopupMenu() override;
 
-    // Show completions at editor caret position
-    void showCompletions(const std::vector<CompletionItem>& items, juce::CodeEditorComponent& editor, int caretPos);
-
-    // Hide the popup
+    void showCompletions(const std::vector<CompletionItem>& items);
     void hideCompletions();
+    bool isOpen() const { return isVisible() && ! completionItems.empty(); }
+    bool acceptCompletion();
 
-    // Accept current selection
-    void acceptCompletion();
-
-    // Callback when completion is selected
     std::function<void(const CompletionItem&)> onCompletionAccepted;
 
-    // Component methods
-    void paint(juce::Graphics& g) override;
-    void mouseUp(const juce::MouseEvent& event) override;
-    void mouseMove(const juce::MouseEvent& event) override;
-
-    // KeyListener methods
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
 private:
-    juce::CodeEditorComponent* editorComponent;
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+
+    juce::CodeEditorComponent* editor = nullptr;
     std::vector<CompletionItem> completionItems;
     int selectedIndex = 0;
-    int maxVisibleItems = 10;
-
-    void updateSelection(int newIndex);
-    int getItemAtY(int y) const;
+    static constexpr int itemHeight = 20;
+    static constexpr int maxVisibleItems = 10;
+    static constexpr int menuWidth = 300;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompletionPopupMenu)
 };

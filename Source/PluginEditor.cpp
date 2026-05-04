@@ -11,8 +11,12 @@
 
 namespace
 {
-    constexpr const char* waviateShaderExtension = ".wsl";
-    constexpr const char* waviateShaderWildcard = "*.wsl";
+    constexpr const char* waviateShaderExtension = ".wlsl";
+    constexpr const char* waviateShaderWildcard = "*.wlsl";
+    constexpr const char* lastOpenedFileSettingKey = "lastOpenedFile";
+    constexpr const char* recentFilesSettingKey = "recentFiles";
+    constexpr int recentFileItemBase = 2000;
+    constexpr int maxRecentFileCount = 10;
 }
 
 //==============================================================================
@@ -58,7 +62,7 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
                         "Ctrl+S - Save File\n"
                         "Ctrl+Shift+S - Save As\n"
                         "Ctrl+Enter - Compile\n"
-                        "Ctrl+Space - Play/Pause (or Autocomplete in editor)\n"
+                        "Ctrl+Space - Play/Pause (Autocomplete in editor)\n"
                         "Ctrl+L - Toggle Log Viewer\n"
                         "Ctrl+W - Toggle Waveform Visualizer\n\n"
                         "Features:\n"
@@ -80,6 +84,7 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     addAndMakeVisible(codeEditor);
     codeEditor.setProcessor(p);
     codeEditor.setVisualizer(p.visualizer);
+    codeEditor.setOnTextChanged([this] { markFileModified(); });
 
     // Empty state message
     addAndMakeVisible(emptyStateLabel);
@@ -94,6 +99,7 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
 
     userSettings = std::make_unique<juce::PropertiesFile>(createSettingsOptions());
     selectTheme(userSettings->getValue("theme", WaviateThemes::fallback().id), false);
+    loadLastOpenedFileIfAvailable();
     resized();
 }
 
@@ -172,14 +178,36 @@ bool WaviateScriptAudioProcessorEditor::keyPressed(const juce::KeyPress& key, ju
     return false;
 }
 
+void WaviateScriptAudioProcessorEditor::userTriedToCloseWindow()
+{
+    requestApplicationQuit();
+}
+
 //==============================================================================
 void WaviateScriptAudioProcessorEditor::showFileMenu()
 {
     juce::PopupMenu fileMenu;
+    juce::PopupMenu recentMenu;
+    auto recentFiles = getRecentFiles();
+
+    if (recentFiles.isEmpty())
+    {
+        recentMenu.addItem(recentFileItemBase, "No Recent Files", false);
+    }
+    else
+    {
+        for (int i = 0; i < recentFiles.size(); ++i)
+        {
+            const juce::File file(recentFiles[i]);
+            recentMenu.addItem(recentFileItemBase + i,
+                               file.getFileName() + "    " + file.getParentDirectory().getFullPathName());
+        }
+    }
     
     fileMenu.addItem(1, "New", true);
     fileMenu.addSeparator();
     fileMenu.addItem(2, "Open...", true);
+    fileMenu.addSubMenu("Open Recent", recentMenu, ! recentFiles.isEmpty());
     fileMenu.addSeparator();
     fileMenu.addItem(3, "Save", currentScriptFile.existsAsFile());
     fileMenu.addItem(4, "Save As...", currentScriptFile.existsAsFile());
@@ -189,12 +217,18 @@ void WaviateScriptAudioProcessorEditor::showFileMenu()
     fileMenu.showMenuAsync(juce::PopupMenu::Options()
         .withTargetComponent(&fileMenuButton),
         [this](int result) {
+            if (result >= recentFileItemBase && result < recentFileItemBase + maxRecentFileCount)
+            {
+                openRecentFile(result - recentFileItemBase);
+                return;
+            }
+
             switch (result) {
                 case 1: createNewFile(); break;
                 case 2: openFile(); break;
                 case 3: saveFile(); break;
                 case 4: saveFileAs(); break;
-                case 5: juce::JUCEApplicationBase::quit(); break;
+                case 5: requestApplicationQuit(); break;
             }
         });
 }
@@ -228,18 +262,20 @@ void WaviateScriptAudioProcessorEditor::showViewMenu()
 
 void WaviateScriptAudioProcessorEditor::createNewFile()
 {
-    const auto templateContent = getDefaultShaderTemplate();
-    
-    fileChooser = std::make_unique<juce::FileChooser>(
-        "Create New Waviate Shading Language File",
-        getDefaultSaveDirectory(),
-        waviateShaderWildcard);
+    runAfterSavePrompt([this] {
+        const auto templateContent = getDefaultShaderTemplate();
 
-    const auto flags = juce::FileBrowserComponent::saveMode 
-        | juce::FileBrowserComponent::canSelectFiles;
+        fileChooser = std::make_unique<juce::FileChooser>(
+            "Create New Waviate Shading Language File",
+            getDefaultSaveDirectory(),
+            waviateShaderWildcard);
 
-    fileChooser->launchAsync(flags, [this, templateContent](const juce::FileChooser& chooser) {
-        handleNewFileDialogResult(chooser, templateContent);
+        const auto flags = juce::FileBrowserComponent::saveMode
+            | juce::FileBrowserComponent::canSelectFiles;
+
+        fileChooser->launchAsync(flags, [this, templateContent](const juce::FileChooser& chooser) {
+            handleNewFileDialogResult(chooser, templateContent);
+        });
     });
 }
 
@@ -266,16 +302,18 @@ void WaviateScriptAudioProcessorEditor::handleNewFileDialogResult(
 
 void WaviateScriptAudioProcessorEditor::openFile()
 {
-    fileChooser = std::make_unique<juce::FileChooser>(
-        "Open Waviate Shading Language File",
-        getDefaultSaveDirectory(),
-        waviateShaderWildcard);
+    runAfterSavePrompt([this] {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            "Open Waviate Shading Language File",
+            getDefaultSaveDirectory(),
+            waviateShaderWildcard);
 
-    const auto flags = juce::FileBrowserComponent::openMode
-        | juce::FileBrowserComponent::canSelectFiles;
+        const auto flags = juce::FileBrowserComponent::openMode
+            | juce::FileBrowserComponent::canSelectFiles;
 
-    fileChooser->launchAsync(flags, [this](const juce::FileChooser& chooser) {
-        handleOpenFileDialogResult(chooser);
+        fileChooser->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+            handleOpenFileDialogResult(chooser);
+        });
     });
 }
 
@@ -289,7 +327,7 @@ void WaviateScriptAudioProcessorEditor::handleOpenFileDialogResult(const juce::F
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon,
                 "Unsupported File Type",
-                "Waviate Script currently opens Waviate Shading Language files with the .wsl suffix."
+                "Waviate Script currently opens Waviate Shading Language files with the .wlsl suffix."
             );
             return;
         }
@@ -301,9 +339,14 @@ void WaviateScriptAudioProcessorEditor::handleOpenFileDialogResult(const juce::F
 
 void WaviateScriptAudioProcessorEditor::saveFile()
 {
+    saveFileThen({});
+}
+
+void WaviateScriptAudioProcessorEditor::saveFileThen(std::function<void()> afterSave)
+{
     // If file is transient (new, never saved), always do Save As
     if (isFileTransient || !currentScriptFile.existsAsFile()) {
-        saveFileAs();
+        saveFileAsThen(std::move(afterSave));
         return;
     }
 
@@ -311,11 +354,20 @@ void WaviateScriptAudioProcessorEditor::saveFile()
     const auto fileContent = codeEditor.getText();
     if (currentScriptFile.replaceWithText(fileContent)) {
         isFileModified = false;
+        rememberRecentFile(currentScriptFile);
         updateFileLabel();
+
+        if (afterSave != nullptr)
+            afterSave();
     }
 }
 
 void WaviateScriptAudioProcessorEditor::saveFileAs()
+{
+    saveFileAsThen({});
+}
+
+void WaviateScriptAudioProcessorEditor::saveFileAsThen(std::function<void()> afterSave)
 {
     auto saveDir = getDefaultSaveDirectory();
     auto filename = currentScriptFile.getFileName();
@@ -335,13 +387,14 @@ void WaviateScriptAudioProcessorEditor::saveFileAs()
     const auto flags = juce::FileBrowserComponent::saveMode
         | juce::FileBrowserComponent::canSelectFiles;
 
-    fileChooser->launchAsync(flags, [this](const juce::FileChooser& chooser) {
-        handleSaveFileDialogResult(chooser);
+    fileChooser->launchAsync(flags, [this, afterSave = std::move(afterSave)](const juce::FileChooser& chooser) mutable {
+        handleSaveFileDialogResult(chooser, std::move(afterSave));
     });
 }
 
 void WaviateScriptAudioProcessorEditor::handleSaveFileDialogResult(
-    const juce::FileChooser& chooser)
+    const juce::FileChooser& chooser,
+    std::function<void()> afterSave)
 {
     auto file = chooser.getResult();
     fileChooser.reset();
@@ -360,10 +413,14 @@ void WaviateScriptAudioProcessorEditor::handleSaveFileDialogResult(
             isFileTransient = false;
             isFileModified = false;
             currentScriptFile = file;
+            rememberRecentFile(file);
             updateFileLabel();
             
             // Compile the file if it was successfully saved
             audioProcessor.loadProgram(file);
+
+            if (afterSave != nullptr)
+                afterSave();
         }
     }
 }
@@ -377,23 +434,191 @@ void WaviateScriptAudioProcessorEditor::loadScriptFile(const juce::File& file)
     if (file.existsAsFile()) {
         auto fileContent = file.loadFileAsString();
         codeEditor.setText(fileContent);
+        isFileModified = false;
         hideEmptyState();
         
         // Compile the loaded file
         audioProcessor.loadProgram(file);
+        rememberRecentFile(file);
     }
 
     updateFileLabel();
     repaint();
 }
 
+void WaviateScriptAudioProcessorEditor::openRecentFile(int index)
+{
+    auto recentFiles = getRecentFiles();
+    if (index < 0 || index >= recentFiles.size())
+        return;
+
+    const juce::File file(recentFiles[index]);
+    if (! file.existsAsFile())
+    {
+        recentFiles.remove(index);
+        storeRecentFiles(recentFiles);
+        clearMissingLastOpenedFile();
+        return;
+    }
+
+    runAfterSavePrompt([this, file] {
+        isFileTransient = false;
+        loadScriptFile(file);
+    });
+}
+
+void WaviateScriptAudioProcessorEditor::loadLastOpenedFileIfAvailable()
+{
+    if (userSettings == nullptr)
+        return;
+
+    const auto path = userSettings->getValue(lastOpenedFileSettingKey);
+    if (path.isEmpty())
+        return;
+
+    const juce::File file(path);
+    if (file.existsAsFile() && file.getFileExtension().equalsIgnoreCase(waviateShaderExtension))
+    {
+        isFileTransient = false;
+        loadScriptFile(file);
+        return;
+    }
+
+    clearMissingLastOpenedFile();
+}
+
+void WaviateScriptAudioProcessorEditor::persistLastOpenedFile(const juce::File& file)
+{
+    if (userSettings == nullptr || ! file.existsAsFile())
+        return;
+
+    userSettings->setValue(lastOpenedFileSettingKey, file.getFullPathName());
+    userSettings->saveIfNeeded();
+}
+
+void WaviateScriptAudioProcessorEditor::clearMissingLastOpenedFile()
+{
+    if (userSettings == nullptr)
+        return;
+
+    const auto path = userSettings->getValue(lastOpenedFileSettingKey);
+    if (path.isNotEmpty() && ! juce::File(path).existsAsFile())
+    {
+        userSettings->removeValue(lastOpenedFileSettingKey);
+        userSettings->saveIfNeeded();
+    }
+}
+
+juce::StringArray WaviateScriptAudioProcessorEditor::getRecentFiles()
+{
+    juce::StringArray files;
+    if (userSettings != nullptr)
+        files.addLines(userSettings->getValue(recentFilesSettingKey));
+
+    juce::StringArray filtered;
+    for (const auto& path : files)
+    {
+        const juce::File file(path);
+        if (path.isNotEmpty()
+            && file.existsAsFile()
+            && file.getFileExtension().equalsIgnoreCase(waviateShaderExtension)
+            && ! filtered.contains(path, true))
+        {
+            filtered.add(path);
+        }
+    }
+
+    if (filtered.size() != files.size())
+        storeRecentFiles(filtered);
+
+    return filtered;
+}
+
+void WaviateScriptAudioProcessorEditor::storeRecentFiles(const juce::StringArray& files)
+{
+    if (userSettings == nullptr)
+        return;
+
+    userSettings->setValue(recentFilesSettingKey, files.joinIntoString("\n"));
+    userSettings->saveIfNeeded();
+}
+
+void WaviateScriptAudioProcessorEditor::rememberRecentFile(const juce::File& file)
+{
+    if (userSettings == nullptr || ! file.existsAsFile())
+        return;
+
+    auto recentFiles = getRecentFiles();
+    const auto path = file.getFullPathName();
+
+    for (int i = recentFiles.size(); --i >= 0;)
+        if (recentFiles[i].equalsIgnoreCase(path))
+            recentFiles.remove(i);
+
+    recentFiles.insert(0, path);
+
+    while (recentFiles.size() > maxRecentFileCount)
+        recentFiles.remove(recentFiles.size() - 1);
+
+    storeRecentFiles(recentFiles);
+    persistLastOpenedFile(file);
+}
+
+void WaviateScriptAudioProcessorEditor::markFileModified()
+{
+    if (! codeEditor.isVisible())
+        return;
+
+    if (! isFileModified)
+    {
+        isFileModified = true;
+        updateFileLabel();
+    }
+}
+
+void WaviateScriptAudioProcessorEditor::runAfterSavePrompt(std::function<void()> action)
+{
+    if (! isFileModified)
+    {
+        if (action != nullptr)
+            action();
+        return;
+    }
+
+    const auto fileName = currentScriptFile.existsAsFile()
+        ? currentScriptFile.getFileName()
+        : juce::String("this file");
+
+    juce::AlertWindow::showYesNoCancelBox(
+        juce::MessageBoxIconType::QuestionIcon,
+        "Save Changes?",
+        "Save changes to " + fileName + " before continuing?",
+        "Save",
+        "Discard",
+        "Cancel",
+        this,
+        juce::ModalCallbackFunction::create([this, action = std::move(action)](int result) mutable {
+            if (result == 1)
+                saveFileThen(std::move(action));
+            else if (result == 2 && action != nullptr)
+                action();
+        }));
+}
+
+void WaviateScriptAudioProcessorEditor::requestApplicationQuit()
+{
+    runAfterSavePrompt([] {
+        juce::JUCEApplicationBase::quit();
+    });
+}
+
 void WaviateScriptAudioProcessorEditor::updateFileLabel()
 {
     if (currentScriptFile.existsAsFile()) {
         auto displayName = currentScriptFile.getFileName();
-        if (isFileTransient) {
-            displayName = "* " + displayName + " (unsaved)";
-        }
+        if (isFileModified || isFileTransient)
+            displayName = "* " + displayName;
+
         currentFileLabel.setText(displayName, juce::dontSendNotification);
     } else {
         currentFileLabel.setText("No file loaded", juce::dontSendNotification);

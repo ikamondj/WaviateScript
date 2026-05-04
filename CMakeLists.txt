@@ -123,6 +123,8 @@ target_sources(WaviateScript
         Source/ClangExternalCompiler.h
         Source/CodeEditor.cpp
         Source/CodeEditor.h
+        Source/CodeEditorCompletion.cpp
+        Source/CodeEditorCompletion.h
         Source/Compilers.h
         Source/CppFileTemplateGenerator.cpp
         Source/CppFileTemplateGenerator.h

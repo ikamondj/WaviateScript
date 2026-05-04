@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include <JuceHeader.h>
 #include "AppTheme.h"
 #include "CodeEditorCompletion.h"
@@ -52,6 +54,11 @@ public:
      * Attach the shared audio visualizer so it can live above the log panel.
      */
     void setVisualizer(juce::AudioVisualiserComponent& visualizerComponent);
+
+    /**
+     * Called after user edits to the document.
+     */
+    void setOnTextChanged(std::function<void()> callback);
 
     /**
      * Set the text content of the editor.
@@ -95,6 +102,8 @@ private:
     void paint(juce::Graphics& g) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override;
+    void codeDocumentTextInserted(const juce::String& newText, int insertIndex) override;
+    void codeDocumentTextDeleted(int startIndex, int endIndex) override;
 
     // UI Layout helpers
     void layoutEditorArea();
@@ -104,21 +113,44 @@ private:
     void applyTheme();
     void updateVisualizerButton();
     void updatePlayPauseButton();
+    void applyVisualizerScaleIndex(int index);
+    void nudgeVisualizerScale(int direction);
+    int getVisualizerSamplesPerBlock() const;
+    void updateVisualizerScaleLabel();
     
     // Compilation
     void performCompilation();
-    
-    // CodeDocument::Listener methods
-    void codeDocumentTextInserted(const juce::String& newText, int insertIndex) override;
-    void codeDocumentTextDeleted(int startIndex, int endIndex) override;
+
+    // Autocomplete helpers
+    void updateCompletions();
+    void handleCompletionAccepted(const CompletionItem& item);
+    void triggerAutocompletionIfApplicable(juce::juce_wchar createdChar);
 
     // ===== References =====
     WaviateScriptAudioProcessor* audioProcessor = nullptr;
+    std::function<void()> onTextChanged;
+
+    class VisualizerWheelOverlay final : public juce::Component
+    {
+    public:
+        std::function<void(const juce::MouseWheelDetails&)> onWheel;
+
+    private:
+        void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
+        {
+            if (onWheel != nullptr)
+                onWheel(wheel);
+        }
+    };
 
     // ===== Editor Components =====
     juce::CodeDocument document;
     juce::CPlusPlusCodeTokeniser tokeniser;
     std::unique_ptr<juce::CodeEditorComponent> editor;
+
+    // ===== Autocomplete =====
+    std::unique_ptr<CompletionProvider> completionProvider;
+    std::unique_ptr<CompletionPopupMenu> completionMenu;
 
     // ===== Bottom Status Bar =====
     juce::Component statusBar;
@@ -131,24 +163,22 @@ private:
     juce::TextEditor logListBox;
     std::vector<juce::String> logMessages;
     juce::AudioVisualiserComponent* visualizer = nullptr;
+    juce::Slider visualizerScaleSlider;
+    juce::Label visualizerScaleValueLabel;
+    VisualizerWheelOverlay visualizerWheelOverlay;
     
     // ===== State =====
     juce::String compilerExtension = ".wlsl";
     WaviateTheme activeTheme = WaviateThemes::fallback();
     bool isLogExpanded = false;
     bool isVisualizerExpanded = true;
+    int visualizerSamplesPerBlockIndex = 3;
     static constexpr float codeFontHeight = 14.0f;
     static constexpr int collapsedStatusBarHeight = 28;
     static constexpr int expandedLogHeight = 120;
     static constexpr int minVisualizerHeight = 120;
     static constexpr int maxVisualizerHeight = 220;
-
-    // ===== Autocomplete =====
-    std::unique_ptr<CompletionProvider> completionProvider;
-    std::unique_ptr<CompletionPopupMenu> completionMenu;
-    void updateCompletions();
-    void triggerAutocompletionIfApplicable(juce::juce_wchar createdChar);
-    void handleCompletionAccepted(const CompletionItem& item);
+    static constexpr int visualizerScaleControlWidth = 48;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CodeEditor)
 };

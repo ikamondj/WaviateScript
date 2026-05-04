@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "AppTheme.h"
@@ -30,6 +32,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override;
+    void userTriedToCloseWindow() override;
 
 private:
     // File menu operations
@@ -39,15 +42,28 @@ private:
     void openFile();
     void saveFile();
     void saveFileAs();
+    void saveFileThen(std::function<void()> afterSave);
+    void saveFileAsThen(std::function<void()> afterSave);
     
     // File dialog handling
     void handleNewFileDialogResult(const juce::FileChooser& chooser, 
                                    const juce::String& templateContent);
     void handleOpenFileDialogResult(const juce::FileChooser& chooser);
-    void handleSaveFileDialogResult(const juce::FileChooser& chooser);
+    void handleSaveFileDialogResult(const juce::FileChooser& chooser,
+                                    std::function<void()> afterSave);
 
     // File operations
     void loadScriptFile(const juce::File& file);
+    void openRecentFile(int index);
+    void loadLastOpenedFileIfAvailable();
+    void persistLastOpenedFile(const juce::File& file);
+    void clearMissingLastOpenedFile();
+    juce::StringArray getRecentFiles();
+    void storeRecentFiles(const juce::StringArray& files);
+    void rememberRecentFile(const juce::File& file);
+    void markFileModified();
+    void runAfterSavePrompt(std::function<void()> action);
+    void requestApplicationQuit();
     void updateFileLabel();
     void showEmptyState();
     void hideEmptyState();

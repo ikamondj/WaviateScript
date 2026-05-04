@@ -43,16 +43,17 @@ public:
         return (band & 1) == 0 ? 1.0f : -1.0f;
     }
 
-    float perlin(float x) const {
+    float perlin(float x, float min = 0.0f, float max = 1.0f) const {
         const int cell = fastFloor(x);
         const float t = x - static_cast<float>(cell);
         const float u = fade(t);
         const float a = gradient(cell) * t;
         const float b = gradient(cell + 1) * (t - 1.0f);
-        return clamp01(0.5f + lerp(a, b, u));
+        const float value = clamp01(0.5f + lerp(a, b, u));
+        return min + value * (max - min);
     }
 
-    float simplex(float x) const {
+    float simplex(float x, float min = 0.0f, float max = 1.0f) const {
         const int cell = fastFloor(x);
         const float x0 = x - static_cast<float>(cell);
         const float x1 = x0 - 1.0f;
@@ -65,10 +66,11 @@ public:
         t1 *= t1;
         const float n1 = t1 * t1 * gradient(cell + 1) * x1;
 
-        return clamp01(0.5f + 4.0f * (n0 + n1));
+        const float value = clamp01(0.5f + 4.0f * (n0 + n1));
+        return min + value * (max - min);
     }
 
-    float voronoi(float x) const {
+    float voronoi(float x, float min = 0.0f, float max = 1.0f) const {
         const int cell = fastFloor(x);
         float nearest = 2.0f;
 
@@ -78,10 +80,11 @@ public:
             nearest = minValue(nearest, wavAbs(x - feature));
         }
 
-        return clamp01(1.0f - nearest);
+        const float value = clamp01(1.0f - nearest);
+        return min + value * (max - min);
     }
 
-    float turbulence(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f) const {
+    float turbulence(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f, float min = 0.0f, float max = 1.0f) const {
         float sum = 0.0f;
         float amplitude = 0.5f;
         float frequency = 1.0f;
@@ -89,16 +92,17 @@ public:
         const int count = clampInt(octaves, 1, 8);
 
         for (int i = 0; i < count; ++i) {
-            sum += amplitude * wavAbs(2.0f * perlin(x * frequency) - 1.0f);
+            sum += amplitude * wavAbs(2.0f * perlin(x * frequency, 0.0f, 1.0f) - 1.0f);
             normalizer += amplitude;
             frequency *= maxValue(0.0001f, lacunarity);
             amplitude *= clamp01(gain);
         }
 
-        return normalizer > 0.0f ? clamp01(sum / normalizer) : 0.0f;
+        const float value = normalizer > 0.0f ? clamp01(sum / normalizer) : 0.0f;
+        return min + value * (max - min);
     }
 
-    float ridgedMulti(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f) const {
+    float ridgedMulti(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f, float min = 0.0f, float max = 1.0f) const {
         float sum = 0.0f;
         float amplitude = 0.5f;
         float frequency = 1.0f;
@@ -106,14 +110,15 @@ public:
         const int count = clampInt(octaves, 1, 8);
 
         for (int i = 0; i < count; ++i) {
-            const float ridge = 1.0f - wavAbs(2.0f * perlin(x * frequency) - 1.0f);
+            const float ridge = 1.0f - wavAbs(2.0f * perlin(x * frequency, 0.0f, 1.0f) - 1.0f);
             sum += amplitude * ridge * ridge;
             normalizer += amplitude;
             frequency *= maxValue(0.0001f, lacunarity);
             amplitude *= clamp01(gain);
         }
 
-        return normalizer > 0.0f ? clamp01(sum / normalizer) : 0.0f;
+        const float value = normalizer > 0.0f ? clamp01(sum / normalizer) : 0.0f;
+        return min + value * (max - min);
     }
 
     float adsr(float attack, float decay, float sustain, float release, float t) const {

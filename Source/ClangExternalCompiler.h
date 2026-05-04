@@ -658,7 +658,7 @@ std::string ClangCompiler<cppMode>::buildTranslationUnit(const std::string& user
     if constexpr (cppMode) {
         tu.append("#line 1 \"WaviateSdk.hpp\"\n");
         tu.append(buildEmbeddedCppApi());
-        tu.append("\n#line 1 \"shader.wsl\"\n");
+        tu.append("\n#line 1 \"shader.wlsl\"\n");
         tu.append(userSource);
         tu.append("\n\n#line 1 \"WaviateCppAbiShim.hpp\"\n");
         tu.append(buildCppAbiShim(userSource));

@@ -53,7 +53,7 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
     wavInput->sustainDefer = sustainDeferredNoteOff.data();
     wavInput->sampleRate = static_cast<float>(currentSampleRate);
 
-    compilers.insert({ ".wsl", std::make_unique<ClangCompiler<true>>() });
+    compilers.insert({ ".wlsl", std::make_unique<ClangCompiler<true>>() });
     InitializeMidiMessageLookup(maxBlockSize);
 }
 
