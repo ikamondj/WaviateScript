@@ -120,6 +120,14 @@ void CodeEditor::setOnTextChanged(std::function<void()> callback)
     onTextChanged = std::move(callback);
 }
 
+void CodeEditor::setCompletionsEnabled(bool shouldBeEnabled)
+{
+    areCompletionsEnabledFlag = shouldBeEnabled;
+
+    if (! areCompletionsEnabledFlag && completionMenu != nullptr)
+        completionMenu->hideCompletions();
+}
+
 //==============================================================================
 void CodeEditor::ensureEditorCreated()
 {
@@ -391,7 +399,7 @@ bool CodeEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 
     if (isCompletionOrPlaybackShortcut)
     {
-        if (editor != nullptr && editor->hasKeyboardFocus(true))
+        if (areCompletionsEnabledFlag && editor != nullptr && editor->hasKeyboardFocus(true))
         {
             updateCompletions();
             return true;
@@ -551,6 +559,12 @@ void CodeEditor::updateCompletions()
     if (editor == nullptr || completionProvider == nullptr || completionMenu == nullptr)
         return;
 
+    if (! areCompletionsEnabledFlag)
+    {
+        completionMenu->hideCompletions();
+        return;
+    }
+
     const auto sourceCode = getText();
     const auto caretPos = editor->getCaretPos();
     const int caretOffset = caretPos.getPosition();
@@ -571,6 +585,12 @@ void CodeEditor::triggerAutocompletionIfApplicable(juce::juce_wchar createdChar)
 {
     if (editor == nullptr || completionProvider == nullptr || completionMenu == nullptr)
         return;
+
+    if (! areCompletionsEnabledFlag)
+    {
+        completionMenu->hideCompletions();
+        return;
+    }
 
     // Show completion menu after typing alphanumeric, underscore, or member access operators
     const bool isIdentifierChar = juce::CharacterFunctions::isLetterOrDigit(createdChar) || createdChar == '_';

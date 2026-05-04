@@ -98,6 +98,12 @@ public:
      */
     void setTheme(const WaviateTheme& theme);
 
+    /**
+     * Enable or disable editor autocomplete behavior.
+     */
+    void setCompletionsEnabled(bool shouldBeEnabled);
+    bool areCompletionsEnabled() const { return areCompletionsEnabledFlag; }
+
 private:
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -172,6 +178,7 @@ private:
     WaviateTheme activeTheme = WaviateThemes::fallback();
     bool isLogExpanded = false;
     bool isVisualizerExpanded = true;
+    bool areCompletionsEnabledFlag = true;
     int visualizerSamplesPerBlockIndex = 3;
     static constexpr float codeFontHeight = 14.0f;
     static constexpr int collapsedStatusBarHeight = 28;

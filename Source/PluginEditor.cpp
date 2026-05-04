@@ -15,6 +15,7 @@ namespace
     constexpr const char* waviateShaderWildcard = "*.wlsl";
     constexpr const char* lastOpenedFileSettingKey = "lastOpenedFile";
     constexpr const char* recentFilesSettingKey = "recentFiles";
+    constexpr const char* codeCompletionsSettingKey = "codeCompletionsEnabled";
     constexpr int recentFileItemBase = 2000;
     constexpr int maxRecentFileCount = 10;
 }
@@ -35,6 +36,9 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
 
     toolbar.addAndMakeVisible(viewMenuButton);
     viewMenuButton.onClick = [this] { showViewMenu(); };
+
+    toolbar.addAndMakeVisible(toolsMenuButton);
+    toolsMenuButton.onClick = [this] { showToolsMenu(); };
 
     // Help menu button
     toolbar.addAndMakeVisible(helpMenuButton);
@@ -98,6 +102,7 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     showEmptyState();
 
     userSettings = std::make_unique<juce::PropertiesFile>(createSettingsOptions());
+    setCompletionsEnabled(userSettings->getBoolValue(codeCompletionsSettingKey, true), false);
     selectTheme(userSettings->getValue("theme", WaviateThemes::fallback().id), false);
     loadLastOpenedFileIfAvailable();
     resized();
@@ -136,6 +141,9 @@ void WaviateScriptAudioProcessorEditor::resized()
         toolbarBounds.removeFromLeft(padding);
 
         viewMenuButton.setBounds(toolbarBounds.removeFromLeft(buttonWidth));
+        toolbarBounds.removeFromLeft(padding);
+
+        toolsMenuButton.setBounds(toolbarBounds.removeFromLeft(buttonWidth));
         toolbarBounds.removeFromLeft(padding);
 
         helpMenuButton.setBounds(toolbarBounds.removeFromLeft(buttonWidth));
@@ -257,6 +265,21 @@ void WaviateScriptAudioProcessorEditor::showViewMenu()
 
             if (themeIndex >= 0 && themeIndex < static_cast<int>(themes.size()))
                 selectTheme(themes[static_cast<size_t>(themeIndex)].id, true);
+        });
+}
+
+void WaviateScriptAudioProcessorEditor::showToolsMenu()
+{
+    constexpr int completionsItemId = 1;
+
+    juce::PopupMenu toolsMenu;
+    toolsMenu.addItem(completionsItemId, "Completions", true, codeEditor.areCompletionsEnabled());
+
+    toolsMenu.showMenuAsync(juce::PopupMenu::Options()
+        .withTargetComponent(&toolsMenuButton),
+        [this](int result) {
+            if (result == completionsItemId)
+                setCompletionsEnabled(! codeEditor.areCompletionsEnabled(), true);
         });
 }
 
@@ -670,6 +693,7 @@ void WaviateScriptAudioProcessorEditor::applyTheme(const WaviateTheme& theme, bo
 
     applyButtonColours(fileMenuButton);
     applyButtonColours(viewMenuButton);
+    applyButtonColours(toolsMenuButton);
     applyButtonColours(helpMenuButton);
 
     currentFileLabel.setColour(juce::Label::textColourId, theme.mutedText);
@@ -683,6 +707,17 @@ void WaviateScriptAudioProcessorEditor::applyTheme(const WaviateTheme& theme, bo
     }
 
     repaint();
+}
+
+void WaviateScriptAudioProcessorEditor::setCompletionsEnabled(bool shouldBeEnabled, bool persistSelection)
+{
+    codeEditor.setCompletionsEnabled(shouldBeEnabled);
+
+    if (persistSelection && userSettings != nullptr)
+    {
+        userSettings->setValue(codeCompletionsSettingKey, shouldBeEnabled);
+        userSettings->saveIfNeeded();
+    }
 }
 
 juce::PropertiesFile::Options WaviateScriptAudioProcessorEditor::createSettingsOptions()

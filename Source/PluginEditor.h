@@ -38,6 +38,7 @@ private:
     // File menu operations
     void showFileMenu();
     void showViewMenu();
+    void showToolsMenu();
     void createNewFile();
     void openFile();
     void saveFile();
@@ -73,6 +74,7 @@ private:
     juce::File getDefaultSaveDirectory() const;
     void applyTheme(const WaviateTheme& theme, bool persistSelection);
     void selectTheme(const juce::String& themeId, bool persistSelection);
+    void setCompletionsEnabled(bool shouldBeEnabled, bool persistSelection);
     static juce::PropertiesFile::Options createSettingsOptions();
 
     WaviateScriptAudioProcessor& audioProcessor;
@@ -82,6 +84,7 @@ private:
     juce::Component toolbar;
     juce::TextButton fileMenuButton{ "File" };
     juce::TextButton viewMenuButton{ "View" };
+    juce::TextButton toolsMenuButton{ "Tools" };
     juce::TextButton helpMenuButton{ "Help" };
     juce::LookAndFeel_V4 themedLookAndFeel;
     
