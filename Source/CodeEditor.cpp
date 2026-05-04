@@ -55,7 +55,14 @@ CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
     
     addKeyListener(this);
     updateVisualizerButton();
+    document.addListener(this);
+    addKeyListener(this);
+    
+    // Initialize autocomplete
+    completionProvider = std::make_unique<CompletionProvider>();
+    
     updatePlayPauseButton();
+    updateVisualizerButton();
     applyTheme();
 }
 
@@ -92,6 +99,15 @@ void CodeEditor::ensureEditorCreated()
     
     addAndMakeVisible(*editor);
     editor->addKeyListener(this);
+    
+    // Create completion popup menu
+    completionMenu = std::make_unique<CompletionPopupMenu>(editor.get());
+    completionMenu->setVisible(false);
+    completionMenu->onCompletionAccepted = [this](const CompletionItem& item) {
+        handleCompletionAccepted(item);
+    };
+    addAndMakeVisible(*completionMenu);
+    
     applyTheme();
     layoutEditorArea();
 }
@@ -404,4 +420,90 @@ void CodeEditor::clearLog()
 {
     logMessages.clear();
     logListBox.clear();
+}
+
+//==============================================================================
+// Autocomplete methods
+void CodeEditor::updateCompletions()
+{
+    if (editor == nullptr || completionProvider == nullptr || completionMenu == nullptr)
+        return;
+    
+    const auto sourceCode = getText();
+    const auto caretPos = editor->getCaretPos();
+    const int caretOffset = caretPos.getPosition();
+    
+    const auto completions = completionProvider->getCompletions(sourceCode, caretOffset);
+    
+    if (completions.empty())
+    {
+        completionMenu->hideCompletions();
+    }
+    else
+    {
+        completionMenu->showCompletions(completions, *editor, caretOffset);
+    }
+}
+
+void CodeEditor::triggerAutocompletionIfApplicable(juce::juce_wchar createdChar)
+{
+    // Show completion on alphanumeric, underscore, or member access operators
+    if (std::isalnum(createdChar) || createdChar == '_' || createdChar == '.' || createdChar == '>')
+    {
+        updateCompletions();
+    }
+    else
+    {
+        // Hide completion menu for other characters
+        if (completionMenu != nullptr)
+            completionMenu->hideCompletions();
+    }
+}
+
+void CodeEditor::handleCompletionAccepted(const CompletionItem& item)
+{
+    if (editor == nullptr)
+        return;
+    
+    const auto caretPos = editor->getCaretPos();
+    const int caretOffset = caretPos.getPosition();
+    const auto sourceCode = getText();
+    
+    // Extract prefix (word being completed)
+    int prefixStart = caretOffset;
+    while (prefixStart > 0 && (std::isalnum(sourceCode[prefixStart - 1]) || sourceCode[prefixStart - 1] == '_'))
+        prefixStart--;
+    
+    const int prefixLength = caretOffset - prefixStart;
+    
+    // Delete prefix and insert completion
+    document.deleteSection(prefixStart, prefixLength);
+    document.insertText(prefixStart, item.insertText);
+    
+    // Position caret after insertion
+    const int newCaretOffset = prefixStart + item.insertText.length() + item.cursorOffsetAfterInsert;
+    const juce::CodeDocument::Position newPos(document, newCaretOffset);
+    editor->moveCaretTo(newPos, false);
+    
+    // Hide completion menu
+    if (completionMenu != nullptr)
+        completionMenu->hideCompletions();
+}
+
+//==============================================================================
+// CodeDocument::Listener implementation
+void CodeEditor::codeDocumentTextInserted(const juce::String& newText, int insertIndex)
+{
+    // Trigger autocompletion for single character inserts
+    if (newText.length() == 1)
+    {
+        triggerAutocompletionIfApplicable(newText[0]);
+    }
+}
+
+void CodeEditor::codeDocumentTextDeleted(int startIndex, int endIndex)
+{
+    // Hide completion menu when text is deleted
+    if (completionMenu != nullptr)
+        completionMenu->hideCompletions();
 }

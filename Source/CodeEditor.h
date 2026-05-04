@@ -14,6 +14,7 @@
 
 #include <JuceHeader.h>
 #include "AppTheme.h"
+#include "CodeEditorCompletion.h"
 
 // Forward declaration
 class WaviateScriptAudioProcessor;
@@ -35,7 +36,8 @@ class WaviateScriptAudioProcessor;
  *   editor.setText("float SampleProcess(const WaviateSample& wav) { return 0.0f; }");
  */
 class CodeEditor : public juce::Component,
-                   private juce::KeyListener
+                   private juce::KeyListener,
+                   private juce::CodeDocument::Listener
 {
 public:
     explicit CodeEditor(WaviateScriptAudioProcessor* processor = nullptr);
@@ -105,6 +107,10 @@ private:
     
     // Compilation
     void performCompilation();
+    
+    // CodeDocument::Listener methods
+    void codeDocumentTextInserted(const juce::String& newText, int insertIndex) override;
+    void codeDocumentTextDeleted(int startIndex, int endIndex) override;
 
     // ===== References =====
     WaviateScriptAudioProcessor* audioProcessor = nullptr;
@@ -127,7 +133,7 @@ private:
     juce::AudioVisualiserComponent* visualizer = nullptr;
     
     // ===== State =====
-    juce::String compilerExtension = ".wsl";
+    juce::String compilerExtension = ".wlsl";
     WaviateTheme activeTheme = WaviateThemes::fallback();
     bool isLogExpanded = false;
     bool isVisualizerExpanded = true;
@@ -136,6 +142,13 @@ private:
     static constexpr int expandedLogHeight = 120;
     static constexpr int minVisualizerHeight = 120;
     static constexpr int maxVisualizerHeight = 220;
+
+    // ===== Autocomplete =====
+    std::unique_ptr<CompletionProvider> completionProvider;
+    std::unique_ptr<CompletionPopupMenu> completionMenu;
+    void updateCompletions();
+    void triggerAutocompletionIfApplicable(juce::juce_wchar createdChar);
+    void handleCompletionAccepted(const CompletionItem& item);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CodeEditor)
 };
