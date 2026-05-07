@@ -1,0 +1,3 @@
+create a class in the main project that will establish serialization and deserialization of a waviate shader file .wlsl
+eventually if shaders will be placed into a database for user sharing, the serialization should remove all uneeded whitespace from the C++ without changing any functions.
+next it will compress it using some good text or code compression algorithm like zipping. then it can store in the db. when deserializing, the user will get it in an uncompressed form and whitespace will be added according to code whitespace standards. a tool will reintroduce official whitespacing so the code is clean and standard.
