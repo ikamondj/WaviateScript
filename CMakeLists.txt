@@ -179,6 +179,8 @@ target_sources(WaviateScript
         Source/WaviateShaderSerializer.h
         Source/WaviateSafety.cpp
         Source/WaviateSafety.h
+        Source/WaviateSafetyValidator.cpp
+        Source/WaviateSafetyValidator.h
         Source/WaviateInput.h
 )
 

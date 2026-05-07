@@ -103,6 +103,7 @@ private:
     bool sustainDown = false;
     double currentSampleRate = 44100.0;
     uint64_t samplesSinceAppStart = 0;
+    waviate::safety::EphemeralArena ephemeralArena;
     std::atomic<bool> processingEnabled { true };
     std::atomic<bool> scriptOverBudget { false };
     std::atomic<int> fuelLimitPreset {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <new>
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/DynamicLibrary.h>
@@ -9,6 +10,7 @@
 namespace
 {
 thread_local waviate::safety::FuelState* currentFuelState = nullptr;
+thread_local waviate::safety::EphemeralArena* currentArena = nullptr;
 
 struct FuelProfile final
 {
@@ -40,6 +42,48 @@ const FuelProfile& profileFor (waviate::safety::FuelLimitPreset preset) noexcept
 
 namespace waviate::safety
 {
+EphemeralArena::EphemeralArena (size_t capacityBytes)
+    : storage (new (std::nothrow) std::byte[capacityBytes]),
+      capacity (storage != nullptr ? capacityBytes : 0)
+{
+}
+
+void EphemeralArena::resetForPass() noexcept
+{
+    offset = 0;
+    exhausted = false;
+    ++generation;
+}
+
+void* EphemeralArena::allocate (uint64_t sizeBytes, uint64_t alignmentBytes) noexcept
+{
+    if (storage == nullptr || sizeBytes == 0)
+        return nullptr;
+
+    auto alignment = static_cast<size_t> (std::max<uint64_t> (1, alignmentBytes));
+
+    if ((alignment & (alignment - 1)) != 0)
+    {
+        auto rounded = size_t { 1 };
+        while (rounded < alignment)
+            rounded <<= 1;
+        alignment = rounded;
+    }
+
+    const auto alignedOffset = (offset + alignment - 1) & ~(alignment - 1);
+
+    if (alignedOffset > capacity || sizeBytes > capacity - alignedOffset)
+    {
+        exhausted = true;
+        waviate_fuel_trap();
+        return nullptr;
+    }
+
+    auto* result = storage.get() + alignedOffset;
+    offset = alignedOffset + static_cast<size_t> (sizeBytes);
+    return result;
+}
+
 ScopedFuelBudget::ScopedFuelBudget (FuelState& state) noexcept
 {
     previous = currentFuelState;
@@ -49,6 +93,18 @@ ScopedFuelBudget::ScopedFuelBudget (FuelState& state) noexcept
 ScopedFuelBudget::~ScopedFuelBudget() noexcept
 {
     currentFuelState = previous;
+}
+
+ScopedArenaPass::ScopedArenaPass (EphemeralArena& arena) noexcept
+{
+    previous = currentArena;
+    arena.resetForPass();
+    currentArena = &arena;
+}
+
+ScopedArenaPass::~ScopedArenaPass() noexcept
+{
+    currentArena = previous;
 }
 
 std::array<FuelLimitPreset, 5> getFuelLimitPresets() noexcept
@@ -97,6 +153,10 @@ void registerRuntimeSymbols()
                                               reinterpret_cast<void*> (&waviate_consume_fuel));
         llvm::sys::DynamicLibrary::AddSymbol ("waviate_fuel_trap",
                                               reinterpret_cast<void*> (&waviate_fuel_trap));
+        llvm::sys::DynamicLibrary::AddSymbol ("__waviate_internal_arena_allocate",
+                                              reinterpret_cast<void*> (&__waviate_internal_arena_allocate));
+        llvm::sys::DynamicLibrary::AddSymbol ("__waviate_internal_arena_generation",
+                                              reinterpret_cast<void*> (&__waviate_internal_arena_generation));
     });
 }
 
@@ -134,4 +194,20 @@ extern "C" void waviate_fuel_trap() noexcept
 {
     if (currentFuelState != nullptr)
         currentFuelState->exhausted = true;
+}
+
+extern "C" void* __waviate_internal_arena_allocate (uint64_t sizeBytes, uint64_t alignmentBytes) noexcept
+{
+    if (currentArena == nullptr)
+    {
+        waviate_fuel_trap();
+        return nullptr;
+    }
+
+    return currentArena->allocate (sizeBytes, alignmentBytes);
+}
+
+extern "C" uint64_t __waviate_internal_arena_generation() noexcept
+{
+    return currentArena != nullptr ? currentArena->getGeneration() : 0;
 }

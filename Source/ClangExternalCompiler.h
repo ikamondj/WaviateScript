@@ -5,6 +5,7 @@
 #include <cctype>
 #include <deque>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -13,6 +14,7 @@
 #include "AbstractCompiler.h"
 #include "WaviateFuelInstrumentation.h"
 #include "WaviateSafety.h"
+#include "WaviateSafetyValidator.h"
 #include "WaviateCppLanguageModel.h"
 
 #include <clang/Basic/DiagnosticIDs.h>
@@ -66,6 +68,7 @@ private:
 
     static bool isIdentifierChar(char c) noexcept;
     static std::string stripCommentsAndStrings(const std::string& source);
+    static std::string validateSourceCapabilities(const std::string& userSource);
     static bool containsFunctionLikeIdentifier(const std::string& source, const char* name);
     static std::string buildEmbeddedCppApi();
     static std::string buildCppAbiShim(const std::string& userSource);
@@ -92,6 +95,18 @@ ClangCompiler<cppMode>::ClangCompiler() {
 template <bool cppMode>
 bool ClangCompiler<cppMode>::isIdentifierChar(char c) noexcept {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+}
+
+template <bool cppMode>
+static std::string trimShaderLineForValidation(std::string line) {
+    while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r' || line.back() == '\n'))
+        line.pop_back();
+
+    size_t first = 0;
+    while (first < line.size() && (line[first] == ' ' || line[first] == '\t'))
+        ++first;
+
+    return line.substr(first);
 }
 
 template <bool cppMode>
@@ -178,6 +193,102 @@ std::string ClangCompiler<cppMode>::stripCommentsAndStrings(const std::string& s
     }
 
     return stripped;
+}
+
+template <bool cppMode>
+std::string ClangCompiler<cppMode>::validateSourceCapabilities(const std::string& userSource) {
+    const auto stripped = stripCommentsAndStrings(userSource);
+    std::ostringstream diagnostics;
+
+    auto reject = [&diagnostics](const std::string& message) {
+        diagnostics << "- " << message << '\n';
+    };
+
+    std::istringstream lines(stripped);
+    std::string line;
+    int lineNumber = 1;
+
+    while (std::getline(lines, line)) {
+        const auto trimmed = trimShaderLineForValidation<cppMode>(line);
+
+        if (!trimmed.empty() && trimmed.front() == '#') {
+            size_t cursor = 1;
+            while (cursor < trimmed.size() && std::isspace(static_cast<unsigned char>(trimmed[cursor])) != 0)
+                ++cursor;
+
+            const auto directiveStart = cursor;
+            while (cursor < trimmed.size() && isIdentifierChar(trimmed[cursor]))
+                ++cursor;
+
+            const auto directive = trimmed.substr(directiveStart, cursor - directiveStart);
+            reject("preprocessor directive '#" + directive + "' on line " + std::to_string(lineNumber)
+                + " is not allowed in Waviate shader code");
+        }
+
+        ++lineNumber;
+    }
+
+    static constexpr const char* forbiddenIdentifiers[] = {
+        "asm", "__asm", "__asm__", "reinterpret_cast", "const_cast", "dynamic_cast", "typeid",
+        "try", "throw", "catch",
+        "new", "delete", "malloc", "calloc", "realloc", "free", "alloca", "_alloca", "_malloca",
+        "system", "popen", "_popen",
+        "CreateProcess", "CreateProcessA", "CreateProcessW", "ShellExecute", "ShellExecuteA", "ShellExecuteW",
+        "WinExec", "LoadLibrary", "LoadLibraryA", "LoadLibraryW", "LoadLibraryExA", "LoadLibraryExW",
+        "GetProcAddress", "FreeLibrary",
+        "dlopen", "dlsym", "dlclose",
+        "fork", "vfork", "execl", "execle", "execlp", "execv", "execve", "execvp", "execvpe",
+        "spawn", "socket", "connect", "bind", "listen", "accept", "send", "recv",
+        "fopen", "freopen", "remove", "rename", "ifstream", "ofstream", "fstream",
+        "thread", "mutex", "atomic", "_Atomic", "__atomic", "__c11_atomic", "_Interlocked", "volatile",
+        "__has_include", "__has_include_next",
+        "waviate_consume_fuel", "waviate_fuel_trap",
+        "__waviate_internal_arena_allocate", "__waviate_internal_arena_generation"
+    };
+
+    size_t cursor = 0;
+    while (cursor < stripped.size()) {
+        if (!isIdentifierChar(stripped[cursor])) {
+            ++cursor;
+            continue;
+        }
+
+        const auto start = cursor;
+        while (cursor < stripped.size() && isIdentifierChar(stripped[cursor]))
+            ++cursor;
+
+        const auto identifier = stripped.substr(start, cursor - start);
+
+        if (identifier.rfind("__builtin_", 0) == 0) {
+            reject("compiler builtin '" + identifier + "' is not allowed in user shader code");
+            continue;
+        }
+
+        for (const auto* forbidden : forbiddenIdentifiers) {
+            if (identifier == forbidden) {
+                reject("identifier '" + identifier + "' is not allowed in user shader code");
+                break;
+            }
+        }
+
+        if constexpr (cppMode) {
+            static constexpr const char* forbiddenCppAbiIdentifiers[] = {
+                "sample_process", "frequency_process",
+                "WaviateSampleInput", "WaviateFrequencyInput",
+                "WaviateSampleStateWriter", "WaviateFrequencyStateWriter"
+            };
+
+            for (const auto* forbidden : forbiddenCppAbiIdentifiers) {
+                if (identifier == forbidden) {
+                    reject("raw ABI identifier '" + identifier
+                        + "' is internal; use SampleProcess(WaviateSample&) or FrequencyProcess(WaviateFrequency&)");
+                    break;
+                }
+            }
+        }
+    }
+
+    return diagnostics.str();
 }
 
 template <bool cppMode>
@@ -288,6 +399,8 @@ void ClangCompiler<cppMode>::configureInvocation(std::shared_ptr<clang::Compiler
         targetTriple,
         implicitIncludes,
         cppMode ? clang::LangStandard::lang_cxx23 : clang::LangStandard::lang_c17);
+    lang.Exceptions = false;
+    lang.CXXExceptions = false;
 
     auto& cg = inv->getCodeGenOpts();
     cg.OptimizationLevel = 2;
@@ -377,6 +490,10 @@ void ClangCompiler<cppMode>::compileSource(std::string source, SampleShader& out
     dispatch_.store(nullptr, std::memory_order_release);
 
     const char* virtualFilename = cppMode ? "shader.cpp" : "shader.c";
+
+    if (const auto sourceDiagnostics = validateSourceCapabilities(source); !sourceDiagnostics.empty())
+        throw std::runtime_error("Unsafe shader source rejected:\n" + sourceDiagnostics);
+
     const std::string tu = buildTranslationUnit(source);
 
     auto unit = std::make_unique<CompiledUnit>();
@@ -394,7 +511,13 @@ void ClangCompiler<cppMode>::compileSource(std::string source, SampleShader& out
         throw std::runtime_error("Clang did not emit an LLVM module");
     }
 
+    if (const auto validation = waviate::safety::validateModuleSafety(*module); !validation)
+        throw std::runtime_error("Unsafe shader rejected before instrumentation:\n" + validation.diagnostics);
+
     waviate::safety::instrumentModuleWithFuel(*module);
+
+    if (const auto validation = waviate::safety::validateModuleSafety(*module); !validation)
+        throw std::runtime_error("Unsafe shader rejected after instrumentation:\n" + validation.diagnostics);
 
     unit->ee = buildJIT(std::move(module));
     if (!unit->ee)

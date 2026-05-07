@@ -1,10 +1,280 @@
 #pragma once
 
-#include <cmath>
 #include "Waviate.h"
 
 #ifndef WAVIATE_SCRIPT_CPP_API_DEFINED
 #define WAVIATE_SCRIPT_CPP_API_DEFINED
+
+extern "C" void* __waviate_internal_arena_allocate(uint64_t sizeBytes, uint64_t alignmentBytes) noexcept;
+extern "C" uint64_t __waviate_internal_arena_generation() noexcept;
+extern "C" void waviate_fuel_trap() noexcept;
+
+template <typename T>
+T* waviateArenaAllocateArray(uint64_t count) {
+    static_assert(__is_trivially_copyable(T) && __is_trivially_destructible(T),
+        "Waviate arena containers only support trivially copyable/destructible element types");
+
+    if (count == 0)
+        return nullptr;
+
+    constexpr uint64_t elementSize = static_cast<uint64_t>(sizeof(T));
+    if (elementSize != 0 && count > (~0ULL / elementSize)) {
+        waviate_fuel_trap();
+        return nullptr;
+    }
+
+    const uint64_t byteCount = count * elementSize;
+    auto* memory = static_cast<T*>(__waviate_internal_arena_allocate(byteCount, static_cast<uint64_t>(alignof(T))));
+    if (memory != nullptr)
+        __builtin_memset(memory, 0, byteCount);
+
+    return memory;
+}
+
+static uint64_t waviateNextCapacity(uint64_t current, uint64_t required) {
+    uint64_t capacity = current > 0 ? current : 4;
+    while (capacity < required) {
+        if (capacity > (~0ULL / 2ULL)) {
+            waviate_fuel_trap();
+            return required;
+        }
+        capacity *= 2;
+    }
+    return capacity;
+}
+
+template <typename T>
+class WaviateArray {
+public:
+    static WaviateArray create(uint64_t count) {
+        WaviateArray array;
+        array.items = waviateArenaAllocateArray<T>(count);
+        array.itemCount = array.items != nullptr ? count : 0;
+        array.generation = __waviate_internal_arena_generation();
+        return array;
+    }
+
+    bool isValid() const {
+        return items != nullptr && generation == __waviate_internal_arena_generation();
+    }
+
+    uint64_t size() const { return isValid() ? itemCount : 0; }
+    bool empty() const { return size() == 0; }
+
+    T get(uint64_t index, T fallback = T{}) const {
+        if (!isValid() || index >= itemCount) {
+            waviate_fuel_trap();
+            return fallback;
+        }
+        return items[index];
+    }
+
+    bool set(uint64_t index, T value) const {
+        if (!isValid() || index >= itemCount) {
+            waviate_fuel_trap();
+            return false;
+        }
+        items[index] = value;
+        return true;
+    }
+
+private:
+    T* items = nullptr;
+    uint64_t itemCount = 0;
+    uint64_t generation = 0;
+};
+
+template <typename T>
+class WaviateVector {
+public:
+    static WaviateVector create(uint64_t initialCapacity = 0) {
+        WaviateVector vector;
+        vector.generation = __waviate_internal_arena_generation();
+        if (initialCapacity > 0)
+            vector.reserve(initialCapacity);
+        return vector;
+    }
+
+    bool isValid() const {
+        return generation == __waviate_internal_arena_generation();
+    }
+
+    uint64_t size() const { return isValid() ? itemCount : 0; }
+    uint64_t capacity() const { return isValid() ? itemCapacity : 0; }
+    bool empty() const { return size() == 0; }
+
+    bool reserve(uint64_t requestedCapacity) {
+        if (!isValid())
+            return false;
+        if (requestedCapacity <= itemCapacity)
+            return true;
+
+        auto* replacement = waviateArenaAllocateArray<T>(requestedCapacity);
+        if (replacement == nullptr)
+            return false;
+
+        if (items != nullptr && itemCount > 0)
+            __builtin_memcpy(replacement, items, itemCount * static_cast<uint64_t>(sizeof(T)));
+
+        items = replacement;
+        itemCapacity = requestedCapacity;
+        return true;
+    }
+
+    bool pushBack(T value) {
+        if (!isValid())
+            return false;
+        if (itemCount >= itemCapacity && !reserve(waviateNextCapacity(itemCapacity, itemCount + 1)))
+            return false;
+        items[itemCount++] = value;
+        return true;
+    }
+
+    T get(uint64_t index, T fallback = T{}) const {
+        if (!isValid() || index >= itemCount) {
+            waviate_fuel_trap();
+            return fallback;
+        }
+        return items[index];
+    }
+
+    bool set(uint64_t index, T value) const {
+        if (!isValid() || index >= itemCount) {
+            waviate_fuel_trap();
+            return false;
+        }
+        items[index] = value;
+        return true;
+    }
+
+    void clear() {
+        if (isValid())
+            itemCount = 0;
+    }
+
+private:
+    T* items = nullptr;
+    uint64_t itemCount = 0;
+    uint64_t itemCapacity = 0;
+    uint64_t generation = 0;
+};
+
+class WaviateString {
+public:
+    static WaviateString create(uint64_t initialCapacity = 0) {
+        WaviateString string;
+        if (initialCapacity == ~0ULL) {
+            waviate_fuel_trap();
+            return string;
+        }
+        string.characters = WaviateVector<char>::create(initialCapacity + 1);
+        string.characters.pushBack('\0');
+        return string;
+    }
+
+    uint64_t length() const {
+        const auto size = characters.size();
+        return size > 0 ? size - 1 : 0;
+    }
+
+    bool empty() const { return length() == 0; }
+
+    char charAt(uint64_t index, char fallback = '\0') const {
+        if (index >= length()) {
+            waviate_fuel_trap();
+            return fallback;
+        }
+        return characters.get(index, fallback);
+    }
+
+    bool appendChar(char c) {
+        const auto len = length();
+        if (!characters.set(len, c))
+            return false;
+        return characters.pushBack('\0');
+    }
+
+    bool append(const char* text) {
+        if (text == nullptr)
+            return false;
+        for (uint64_t i = 0; text[i] != '\0'; ++i)
+            if (!appendChar(text[i]))
+                return false;
+        return true;
+    }
+
+private:
+    WaviateVector<char> characters;
+};
+
+template <typename K, typename V>
+class WaviateMap {
+public:
+    struct Entry {
+        K key;
+        V value;
+        bool occupied;
+    };
+
+    static WaviateMap create(uint64_t initialCapacity = 0) {
+        WaviateMap map;
+        map.entries = WaviateVector<Entry>::create(initialCapacity > 0 ? initialCapacity : 4);
+        return map;
+    }
+
+    bool isValid() const { return entries.isValid(); }
+    uint64_t size() const { return isValid() ? entryCount : 0; }
+
+    bool put(K key, V value) {
+        if (!isValid()) {
+            waviate_fuel_trap();
+            return false;
+        }
+
+        for (uint64_t i = 0; i < entries.size(); ++i) {
+            auto entry = entries.get(i);
+            if (entry.occupied && entry.key == key) {
+                entry.value = value;
+                return entries.set(i, entry);
+            }
+        }
+
+        if (entryCount >= entries.capacity() && !entries.reserve(waviateNextCapacity(entries.capacity(), entryCount + 1)))
+            return false;
+
+        Entry entry { key, value, true };
+        if (!entries.pushBack(entry))
+            return false;
+
+        ++entryCount;
+        return true;
+    }
+
+    bool tryGet(K key, V& outValue) const {
+        if (!isValid()) {
+            waviate_fuel_trap();
+            return false;
+        }
+
+        for (uint64_t i = 0; i < entries.size(); ++i) {
+            const auto entry = entries.get(i);
+            if (entry.occupied && entry.key == key) {
+                outValue = entry.value;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    V getOrDefault(K key, V fallback = V{}) const {
+        V value = fallback;
+        return tryGet(key, value) ? value : fallback;
+    }
+
+private:
+    WaviateVector<Entry> entries;
+    uint64_t entryCount = 0;
+};
 
 class WaviateCore {
 public:
@@ -39,7 +309,12 @@ public:
             return 1.0f;
 
         const float remaining = maxValue(0.00000011920928955f, 1.0f - p);
-        const int band = static_cast<int>(wavFloor(-wavLog2(remaining)));
+        float threshold = 0.5f;
+        int band = 0;
+        while (remaining <= threshold && band < 24) {
+            threshold *= 0.5f;
+            ++band;
+        }
         return (band & 1) == 0 ? 1.0f : -1.0f;
     }
 
@@ -140,6 +415,17 @@ public:
         return adsr(attack, decay, sustain, release, t);
     }
 
+    template <typename T>
+    WaviateArray<T> newArray(uint64_t size) const { return WaviateArray<T>::create(size); }
+
+    template <typename T>
+    WaviateVector<T> newVector(uint64_t capacity = 0) const { return WaviateVector<T>::create(capacity); }
+
+    WaviateString newString(uint64_t capacity = 0) const { return WaviateString::create(capacity); }
+
+    template <typename K, typename V>
+    WaviateMap<K, V> newMap(uint64_t capacity = 0) const { return WaviateMap<K, V>::create(capacity); }
+
 protected:
     WaviateCore(float sampleRateIn, uint64_t samplesSinceAppStartIn)
         : coreSampleRate(sampleRateIn), coreSamplesSinceAppStart(samplesSinceAppStartIn) {}
@@ -151,14 +437,54 @@ protected:
 private:
     static constexpr float pi = 3.14159265358979323846f;
     static constexpr float twoPi = 6.28318530717958647692f;
+    static constexpr float halfPi = 1.57079632679489661923f;
+    static constexpr float invTwoPi = 0.15915494309189533577f;
     static constexpr float oneThird = 0.33333333333333333333f;
 
-    static float wavSin(float x) { return static_cast<float>(std::sin(x)); }
-    static float wavTan(float x) { return static_cast<float>(std::tan(x)); }
-    static float wavFloor(float x) { return static_cast<float>(std::floor(x)); }
-    static float wavAbs(float x) { return static_cast<float>(std::fabs(x)); }
-    static float wavSqrt(float x) { return static_cast<float>(std::sqrt(x)); }
-    static float wavLog2(float x) { return static_cast<float>(std::log2(x)); }
+    static float wavAbs(float x) { return x < 0.0f ? -x : x; }
+    static float reduceRadians(float x) {
+        if (x > 2147483520.0f || x < -2147483520.0f)
+            return 0.0f;
+
+        const int turns = static_cast<int>(x * invTwoPi + (x >= 0.0f ? 0.5f : -0.5f));
+        x -= static_cast<float>(turns) * twoPi;
+        if (x > pi)
+            x -= twoPi;
+        else if (x < -pi)
+            x += twoPi;
+        return x;
+    }
+    static float wavSin(float x) {
+        x = reduceRadians(x);
+        const float x2 = x * x;
+        return x * (1.0f + x2 * (-0.1666666716f + x2 * (0.0083333310f + x2 * -0.0001984090f)));
+    }
+    static float wavCos(float x) {
+        return wavSin(x + halfPi);
+    }
+    static float wavTan(float x) {
+        const float c = wavCos(x);
+        if (wavAbs(c) < 0.0001f)
+            return wavSin(x) >= 0.0f ? 10000.0f : -10000.0f;
+        return wavSin(x) / c;
+    }
+    static float wavFloor(float x) {
+        if (x >= 2147483520.0f || x <= -2147483520.0f)
+            return x;
+
+        const int i = static_cast<int>(x);
+        const float f = static_cast<float>(i);
+        return f > x ? f - 1.0f : f;
+    }
+    static float wavSqrt(float x) {
+        if (x <= 0.0f)
+            return 0.0f;
+
+        float guess = x > 1.0f ? x : 1.0f;
+        for (int i = 0; i < 6; ++i)
+            guess = 0.5f * (guess + x / guess);
+        return guess;
+    }
 
     static float minValue(float a, float b) { return a < b ? a : b; }
     static float maxValue(float a, float b) { return a > b ? a : b; }

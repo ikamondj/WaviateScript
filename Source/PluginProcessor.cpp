@@ -555,17 +555,18 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
                 for (int ch = 0; ch < mainOutputCh; ++ch)
                 {
+                    waviate::safety::ScopedArenaPass arenaPass(ephemeralArena);
                     wavInput->channel = static_cast<uint8_t>(ch);
                     mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
 
-                    if (fuelState.exhausted)
+                    if (fuelState.exhausted || ephemeralArena.wasExhausted())
                         break;
                 }
             }
 
             midiBlockMessages[static_cast<size_t>(samp)].clear();
 
-            if (fuelState.exhausted)
+            if (fuelState.exhausted || ephemeralArena.wasExhausted())
             {
                 scriptExceededFuel = true;
                 break;
