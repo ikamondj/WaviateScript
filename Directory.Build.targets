@@ -1,0 +1,43 @@
+<Project>
+  <PropertyGroup>
+    <WaviateScriptVcpkgTriplet Condition="'$(WaviateScriptVcpkgTriplet)' == '' and '$(Platform)' == 'x64'">x64-windows</WaviateScriptVcpkgTriplet>
+    <WaviateScriptVcpkgTriplet Condition="'$(WaviateScriptVcpkgTriplet)' == ''">$(VcpkgTriplet)</WaviateScriptVcpkgTriplet>
+
+    <WaviateScriptLlvmBinDir Condition="'$(WaviateScriptLlvmBinDir)' == '' and Exists('C:\Program Files\LLVM\bin\LLVM-C.dll')">C:\Program Files\LLVM\bin</WaviateScriptLlvmBinDir>
+
+    <WaviateScriptVcpkgBinDir Condition="'$(WaviateScriptVcpkgBinDir)' == '' and '$(VcpkgInstalledDir)' != ''">$(VcpkgInstalledDir)$(WaviateScriptVcpkgTriplet)\bin</WaviateScriptVcpkgBinDir>
+    <WaviateScriptVcpkgBinDir Condition="'$(WaviateScriptVcpkgBinDir)' == '' and '$(VcpkgRoot)' != ''">$(VcpkgRoot)installed\$(WaviateScriptVcpkgTriplet)\bin</WaviateScriptVcpkgBinDir>
+    <WaviateScriptVcpkgBinDir Condition="'$(WaviateScriptVcpkgBinDir)' == '' and Exists('$(USERPROFILE)\vcpkg\installed\$(WaviateScriptVcpkgTriplet)\bin')">$(USERPROFILE)\vcpkg\installed\$(WaviateScriptVcpkgTriplet)\bin</WaviateScriptVcpkgBinDir>
+
+    <WaviateScriptZlibBinDir Condition="'$(WaviateScriptZlibBinDir)' == '' and Exists('$(WaviateScriptLlvmBinDir)\zlib1.dll')">$(WaviateScriptLlvmBinDir)</WaviateScriptZlibBinDir>
+    <WaviateScriptZlibBinDir Condition="'$(WaviateScriptZlibBinDir)' == '' and Exists('$(WaviateScriptVcpkgBinDir)\zlib1.dll')">$(WaviateScriptVcpkgBinDir)</WaviateScriptZlibBinDir>
+
+    <WaviateScriptZstdBinDir Condition="'$(WaviateScriptZstdBinDir)' == '' and Exists('$(WaviateScriptLlvmBinDir)\zstd.dll')">$(WaviateScriptLlvmBinDir)</WaviateScriptZstdBinDir>
+    <WaviateScriptZstdBinDir Condition="'$(WaviateScriptZstdBinDir)' == '' and Exists('$(WaviateScriptVcpkgBinDir)\zstd.dll')">$(WaviateScriptVcpkgBinDir)</WaviateScriptZstdBinDir>
+  </PropertyGroup>
+
+  <Target Name="CopyWaviateScriptRuntimeDlls"
+          AfterTargets="Build"
+          Condition="'$(MSBuildProjectName)' == 'WaviateScript_StandalonePlugin' and Exists('$(TargetPath)')">
+    <ItemGroup>
+      <WaviateScriptRuntimeDll Include="$(WaviateScriptLlvmBinDir)\LLVM-C.dll" Condition="Exists('$(WaviateScriptLlvmBinDir)\LLVM-C.dll')" />
+      <WaviateScriptRuntimeDll Include="$(WaviateScriptLlvmBinDir)\libclang.dll" Condition="Exists('$(WaviateScriptLlvmBinDir)\libclang.dll')" />
+      <WaviateScriptRuntimeDll Include="$(WaviateScriptZlibBinDir)\zlib1.dll" Condition="Exists('$(WaviateScriptZlibBinDir)\zlib1.dll')" />
+      <WaviateScriptRuntimeDll Include="$(WaviateScriptZstdBinDir)\zstd.dll" Condition="Exists('$(WaviateScriptZstdBinDir)\zstd.dll')" />
+    </ItemGroup>
+
+    <Message Importance="High"
+             Text="Copying WaviateScript runtime DLLs to $(TargetDir): @(WaviateScriptRuntimeDll->'%(Filename)%(Extension)', ', ')"
+             Condition="'@(WaviateScriptRuntimeDll)' != ''" />
+
+    <Copy SourceFiles="@(WaviateScriptRuntimeDll)"
+          DestinationFolder="$(TargetDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(WaviateScriptRuntimeDll)' != ''" />
+
+    <Warning Text="`zlib1.dll` was not found in '$(WaviateScriptLlvmBinDir)' or '$(WaviateScriptVcpkgBinDir)'. The standalone build may fail to start on machines without that DLL on PATH."
+             Condition="!Exists('$(TargetDir)zlib1.dll')" />
+    <Warning Text="`zstd.dll` was not found in '$(WaviateScriptLlvmBinDir)' or '$(WaviateScriptVcpkgBinDir)'. The standalone build may fail to start on machines without that DLL on PATH."
+             Condition="!Exists('$(TargetDir)zstd.dll')" />
+  </Target>
+</Project>

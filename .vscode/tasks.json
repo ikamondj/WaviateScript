@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build WaviateScript Standalone Release|x64",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'; if (!(Test-Path $vswhere)) { throw 'vswhere.exe was not found. Install Visual Studio 2026 or Build Tools with MSBuild.' }; $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\\**\\Bin\\amd64\\MSBuild.exe' | Select-Object -First 1; if (-not $msbuild) { $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\\**\\Bin\\MSBuild.exe' | Select-Object -First 1 }; if (-not $msbuild) { throw 'MSBuild.exe was not found by vswhere.' }; $buildArgs = @('Builds\\VisualStudio2026\\WaviateScript_StandalonePlugin.vcxproj', '/t:Build', '/p:Configuration=Release;Platform=x64'); for ($attempt = 1; $attempt -le 3; $attempt++) { & $msbuild @buildArgs; if ($LASTEXITCODE -eq 0) { exit 0 }; if ($attempt -lt 3) { Write-Host \"MSBuild failed on attempt $attempt. Retrying in 2 seconds...\"; Start-Sleep -Seconds 2 } }; exit $LASTEXITCODE"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      }
+    }
+  ]
+}

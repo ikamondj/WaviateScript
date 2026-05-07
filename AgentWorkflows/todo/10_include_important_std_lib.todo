@@ -1,0 +1,3 @@
+I want to include the relevant standard library as accessible to the C++ in waviate.
+This should support all standard containers like vectors, queues, maps, etc. Don't make them available in the prelude, just let users #include <std_lib_name>.
+Do not include any stuff that involves system calls. It should be only safe. assume any waviate script file will probably be shared to others computers and we want to prevent most hacker attacks.

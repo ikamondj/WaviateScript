@@ -1,0 +1,4 @@
+In the LLVM compile engine we need a few things for safety. 
+
+Step 1 remove the ability to make system calls from the compiled code. this way even if a user were to make the IO parts of std lib from scratch, it can never access external files, web, etc...
+Step 2 

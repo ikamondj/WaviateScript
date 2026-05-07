@@ -6,6 +6,7 @@ include(FetchContent)
 
 option(WAVIATESCRIPT_PREMIUM "Build WaviateScript with WSPremium features" OFF)
 option(WAVIATESCRIPT_COPY_PLUGIN_AFTER_BUILD "Ask JUCE to copy built plugin artifacts to the local plugin folders" OFF)
+option(WAVIATESCRIPT_REQUIRE_FFTW "Fail CMake configure when FFTW is not available" OFF)
 
 set(WAVIATESCRIPT_JUCE_DIR "" CACHE PATH "Path to a local JUCE 8.0.12 checkout")
 set(WAVIATESCRIPT_PREMIUM_SOURCE_DIR "" CACHE PATH "Path to the WSPremium source checkout")
@@ -57,6 +58,33 @@ find_package(Clang CONFIG REQUIRED)
 message(STATUS "Using LLVM ${LLVM_PACKAGE_VERSION} from ${LLVM_DIR}")
 message(STATUS "Using Clang package from ${Clang_DIR}")
 
+if(WIN32 AND TARGET LLVMDebugInfoPDB)
+    set(WAVIATESCRIPT_DIAGUIDS_LIB "")
+    if(CMAKE_GENERATOR_INSTANCE AND EXISTS "${CMAKE_GENERATOR_INSTANCE}/DIA SDK/lib/amd64/diaguids.lib")
+        set(WAVIATESCRIPT_DIAGUIDS_LIB "${CMAKE_GENERATOR_INSTANCE}/DIA SDK/lib/amd64/diaguids.lib")
+    elseif(EXISTS "$ENV{ProgramFiles}/Microsoft Visual Studio/18/Community/DIA SDK/lib/amd64/diaguids.lib")
+        set(WAVIATESCRIPT_DIAGUIDS_LIB "$ENV{ProgramFiles}/Microsoft Visual Studio/18/Community/DIA SDK/lib/amd64/diaguids.lib")
+    endif()
+
+    if(WAVIATESCRIPT_DIAGUIDS_LIB)
+        get_target_property(WAVIATESCRIPT_LLVM_PDB_LINK_LIBS LLVMDebugInfoPDB INTERFACE_LINK_LIBRARIES)
+        if(WAVIATESCRIPT_LLVM_PDB_LINK_LIBS)
+            string(REPLACE
+                "C:/Program Files (x86)/Microsoft Visual Studio/2019/Professional/DIA SDK/lib/amd64/diaguids.lib"
+                "${WAVIATESCRIPT_DIAGUIDS_LIB}"
+                WAVIATESCRIPT_LLVM_PDB_LINK_LIBS
+                "${WAVIATESCRIPT_LLVM_PDB_LINK_LIBS}"
+            )
+            set_target_properties(LLVMDebugInfoPDB PROPERTIES
+                INTERFACE_LINK_LIBRARIES "${WAVIATESCRIPT_LLVM_PDB_LINK_LIBS}"
+            )
+            message(STATUS "Adjusted LLVMDebugInfoPDB to use ${WAVIATESCRIPT_DIAGUIDS_LIB}")
+        endif()
+    else()
+        message(WARNING "Could not locate a DIA SDK diaguids.lib to override LLVM's stale imported path. LLVMDebugInfoPDB may fail to link.")
+    endif()
+endif()
+
 set(WAVIATESCRIPT_FFTW_HINTS)
 if(WAVIATESCRIPT_FFTW_DIR)
     list(APPEND WAVIATESCRIPT_FFTW_HINTS "${WAVIATESCRIPT_FFTW_DIR}")
@@ -86,8 +114,12 @@ find_library(FFTW3L_LIBRARY
     PATH_SUFFIXES lib lib64
 )
 
-if(NOT FFTW3_INCLUDE_DIR)
+if(FFTW3_INCLUDE_DIR)
+    message(STATUS "Using FFTW headers from ${FFTW3_INCLUDE_DIR}")
+elseif(WAVIATESCRIPT_REQUIRE_FFTW)
     message(FATAL_ERROR "Could not find fftw3.h. Set WAVIATESCRIPT_FFTW_DIR or FFTW3_INCLUDE_DIR.")
+else()
+    message(STATUS "FFTW not found; continuing because the current public build does not require it.")
 endif()
 
 set(WAVIATESCRIPT_PLUGIN_FORMATS Standalone VST3)
@@ -155,10 +187,13 @@ target_compile_definitions(WaviateScript
 target_include_directories(WaviateScript
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Source"
-        "${FFTW3_INCLUDE_DIR}"
         "${LLVM_INCLUDE_DIRS}"
         "${CLANG_INCLUDE_DIRS}"
 )
+
+if(FFTW3_INCLUDE_DIR)
+    target_include_directories(WaviateScript PRIVATE "${FFTW3_INCLUDE_DIR}")
+endif()
 
 target_link_libraries(WaviateScript
     PRIVATE
@@ -287,3 +322,67 @@ set_target_properties(WaviateScript PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${WAVIATESCRIPT_OUTPUT_ROOT}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${WAVIATESCRIPT_OUTPUT_ROOT}/bin"
 )
+
+if(WIN32)
+    set(WAVIATESCRIPT_LLVM_BIN_DIR "")
+    if(DEFINED LLVM_TOOLS_BINARY_DIR AND EXISTS "${LLVM_TOOLS_BINARY_DIR}/LLVM-C.dll")
+        set(WAVIATESCRIPT_LLVM_BIN_DIR "${LLVM_TOOLS_BINARY_DIR}")
+    elseif(EXISTS "${LLVM_DIR}/../../../bin/LLVM-C.dll")
+        get_filename_component(WAVIATESCRIPT_LLVM_BIN_DIR "${LLVM_DIR}/../../../bin" ABSOLUTE)
+    endif()
+
+    set(WAVIATESCRIPT_ZLIB_BIN_DIR "")
+    set(WAVIATESCRIPT_ZSTD_BIN_DIR "")
+    if(WAVIATESCRIPT_LLVM_BIN_DIR)
+        if(EXISTS "${WAVIATESCRIPT_LLVM_BIN_DIR}/zlib1.dll")
+            set(WAVIATESCRIPT_ZLIB_BIN_DIR "${WAVIATESCRIPT_LLVM_BIN_DIR}")
+        endif()
+        if(EXISTS "${WAVIATESCRIPT_LLVM_BIN_DIR}/zstd.dll")
+            set(WAVIATESCRIPT_ZSTD_BIN_DIR "${WAVIATESCRIPT_LLVM_BIN_DIR}")
+        endif()
+    endif()
+
+    foreach(vcpkg_candidate IN ITEMS "$ENV{VcpkgInstalledDir}" "$ENV{VCPKG_INSTALLED_DIR}" "$ENV{USERPROFILE}/vcpkg/installed")
+        if(NOT WAVIATESCRIPT_ZLIB_BIN_DIR AND EXISTS "${vcpkg_candidate}/x64-windows/bin/zlib1.dll")
+            set(WAVIATESCRIPT_ZLIB_BIN_DIR "${vcpkg_candidate}/x64-windows/bin")
+        endif()
+        if(NOT WAVIATESCRIPT_ZSTD_BIN_DIR AND EXISTS "${vcpkg_candidate}/x64-windows/bin/zstd.dll")
+            set(WAVIATESCRIPT_ZSTD_BIN_DIR "${vcpkg_candidate}/x64-windows/bin")
+        endif()
+    endforeach()
+
+    set(WAVIATESCRIPT_RUNTIME_DLLS)
+    if(WAVIATESCRIPT_LLVM_BIN_DIR)
+        foreach(runtime_name IN ITEMS LLVM-C.dll libclang.dll)
+            if(EXISTS "${WAVIATESCRIPT_LLVM_BIN_DIR}/${runtime_name}")
+                list(APPEND WAVIATESCRIPT_RUNTIME_DLLS "${WAVIATESCRIPT_LLVM_BIN_DIR}/${runtime_name}")
+            endif()
+        endforeach()
+    endif()
+    if(WAVIATESCRIPT_ZLIB_BIN_DIR AND EXISTS "${WAVIATESCRIPT_ZLIB_BIN_DIR}/zlib1.dll")
+        list(APPEND WAVIATESCRIPT_RUNTIME_DLLS "${WAVIATESCRIPT_ZLIB_BIN_DIR}/zlib1.dll")
+    endif()
+    if(WAVIATESCRIPT_ZSTD_BIN_DIR AND EXISTS "${WAVIATESCRIPT_ZSTD_BIN_DIR}/zstd.dll")
+        list(APPEND WAVIATESCRIPT_RUNTIME_DLLS "${WAVIATESCRIPT_ZSTD_BIN_DIR}/zstd.dll")
+    endif()
+    list(REMOVE_DUPLICATES WAVIATESCRIPT_RUNTIME_DLLS)
+
+    if(WAVIATESCRIPT_RUNTIME_DLLS)
+        message(STATUS "Will stage LLVM runtime DLLs: ${WAVIATESCRIPT_RUNTIME_DLLS}")
+    else()
+        message(WARNING "No LLVM runtime DLLs were discovered for staging. Standalone or VST3 binaries may fail to launch if LLVM-C.dll, zlib1.dll, or zstd.dll are not on PATH.")
+    endif()
+
+    foreach(plugin_runtime_target IN ITEMS WaviateScript_Standalone WaviateScript_VST3)
+        if(TARGET "${plugin_runtime_target}" AND WAVIATESCRIPT_RUNTIME_DLLS)
+            add_custom_command(
+                TARGET "${plugin_runtime_target}" POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                        ${WAVIATESCRIPT_RUNTIME_DLLS}
+                        "$<TARGET_FILE_DIR:${plugin_runtime_target}>"
+                COMMAND_EXPAND_LISTS
+                COMMENT "Staging LLVM runtime DLLs for ${plugin_runtime_target}"
+            )
+        endif()
+    endforeach()
+endif()

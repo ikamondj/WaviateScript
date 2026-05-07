@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run WaviateScript Standalone (Release|x64)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/Builds/VisualStudio2026/x64/Release/Standalone Plugin/WaviateScript.exe",
+      "cwd": "${workspaceFolder}/Builds/VisualStudio2026/x64/Release/Standalone Plugin",
+      "preLaunchTask": "build WaviateScript Standalone Release|x64",
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
+}

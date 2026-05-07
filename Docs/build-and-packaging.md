@@ -14,7 +14,7 @@ Studio exporter are no longer required for normal local or CI builds.
 - Windows installer builds: WiX CLI (`wix`)
 - macOS installer builds: Xcode command line tools for `pkgbuild` and `productbuild`
 
-JUCE can be supplied from a local checkout:
+JUCE can be supplied from a local checkout. Example:
 
 ```powershell
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWAVIATESCRIPT_JUCE_DIR="C:/Users/ikamo/OneDrive/Documents/JuceInstalls/JUCE"
@@ -29,15 +29,29 @@ repository pinned to tag `8.0.12`.
 Windows example:
 
 ```powershell
-cmake -S . -B build -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
+$cmake = "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+
+& $cmake -S . -B build -G "Visual Studio 18 2026" -A x64 `
   -DWAVIATESCRIPT_JUCE_DIR="C:/Users/ikamo/OneDrive/Documents/JuceInstalls/JUCE" `
-  -DWAVIATESCRIPT_FFTW_DIR="C:/path/to/fftw" `
   -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm" `
   -DClang_DIR="C:/Program Files/LLVM/lib/cmake/clang"
 
-cmake --build build --config Release
+& $cmake --build build --config Release --target WaviateScript_Standalone
 ```
+
+The standalone executable is emitted to
+`build/WaviateScript_artefacts/bin/Standalone/WaviateScript.exe`.
+On Windows, the CMake build also stages the required LLVM runtime DLLs
+(`LLVM-C.dll`, `libclang.dll`, `zlib1.dll`, and `zstd.dll`) next to the
+standalone executable and inside the VST3 bundle.
+
+`WAVIATESCRIPT_FFTW_DIR` is optional for the current public build. The source
+tree no longer requires FFTW to configure unless `WAVIATESCRIPT_REQUIRE_FFTW`
+is enabled.
+
+If you prefer Ninja on Windows, run CMake from a developer environment that has
+the MSVC toolchain configured. Invoking plain `clang.exe` in GNU frontend mode
+is not a supported Windows setup for this project.
 
 macOS example:
 
@@ -53,7 +67,9 @@ cmake --build build --config Release
 ```
 
 CMake/JUCE places plugin artifacts under `build/WaviateScript_artefacts/`, with
-Standalone and VST3 subfolders for the package scripts to consume.
+`bin/Standalone` for the Windows standalone executable and `lib/VST3` for the
+Windows VST3 bundle. The packaging scripts also accept the older `Standalone`
+and `Standalone Plugin` layout variants.
 
 ## Premium Build
 
@@ -61,16 +77,16 @@ Premium builds require WSPremium source but public builds do not. If
 `WAVIATESCRIPT_PREMIUM=ON`, provide `WAVIATESCRIPT_PREMIUM_SOURCE_DIR`:
 
 ```powershell
-cmake -S . -B build-premium -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
+$cmake = "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+
+& $cmake -S . -B build-premium -G "Visual Studio 18 2026" -A x64 `
   -DWAVIATESCRIPT_PREMIUM=ON `
   -DWAVIATESCRIPT_PREMIUM_SOURCE_DIR="C:/path/to/WSPremium" `
   -DWAVIATESCRIPT_JUCE_DIR="C:/Users/ikamo/OneDrive/Documents/JuceInstalls/JUCE" `
-  -DWAVIATESCRIPT_FFTW_DIR="C:/path/to/fftw" `
   -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm" `
   -DClang_DIR="C:/Program Files/LLVM/lib/cmake/clang"
 
-cmake --build build-premium --config Release
+& $cmake --build build-premium --config Release --target WaviateScript_Standalone
 ```
 
 If `Source/WSPremium` exists locally, CMake uses it as the default premium source
