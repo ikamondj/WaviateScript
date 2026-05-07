@@ -39,7 +39,8 @@ class WaviateScriptAudioProcessor;
  */
 class CodeEditor : public juce::Component,
                    private juce::KeyListener,
-                   private juce::CodeDocument::Listener
+                   private juce::CodeDocument::Listener,
+                   private juce::Timer
 {
 public:
     explicit CodeEditor(WaviateScriptAudioProcessor* processor = nullptr);
@@ -115,6 +116,7 @@ private:
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override;
     void codeDocumentTextInserted(const juce::String& newText, int insertIndex) override;
     void codeDocumentTextDeleted(int startIndex, int endIndex) override;
+    void timerCallback() override;
 
     // UI Layout helpers
     void layoutEditorArea();
@@ -184,6 +186,7 @@ private:
     bool isLogExpanded = false;
     bool isVisualizerExpanded = true;
     bool areCompletionsEnabledFlag = true;
+    bool hasReportedOverBudget = false;
     int visualizerSamplesPerBlockIndex = 3;
     static constexpr float codeFontHeight = 14.0f;
     static constexpr int collapsedStatusBarHeight = 28;

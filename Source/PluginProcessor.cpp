@@ -120,6 +120,8 @@ void WaviateScriptAudioProcessor::loadProgram(const juce::File& file)
     if (compiler == compilers.end())
         return;
 
+    beginUserScriptCompile();
+
     juce::StringArray content;
     file.readLines(content);
     auto source = content.joinIntoString("\n");
@@ -137,8 +139,7 @@ void WaviateScriptAudioProcessor::loadProgram(const juce::File& file)
 
     if (samp != nullptr || freq != nullptr)
     {
-        activeSampleShader.store(samp, std::memory_order_release);
-        activeFrequencyShader.store(freq, std::memory_order_release);
+        installCompiledShaders(samp, freq);
     }
 }
 
@@ -150,6 +151,59 @@ void WaviateScriptAudioProcessor::setProcessingEnabled(bool shouldBeEnabled)
 bool WaviateScriptAudioProcessor::isProcessingEnabled() const
 {
     return processingEnabled.load(std::memory_order_acquire);
+}
+
+void WaviateScriptAudioProcessor::beginUserScriptCompile() noexcept
+{
+    unloadUserScript();
+    scriptOverBudget.store(false, std::memory_order_release);
+}
+
+void WaviateScriptAudioProcessor::installCompiledShaders(SampleShader sampleShader,
+                                                         FrequencyShader frequencyShader) noexcept
+{
+    activeSampleShader.store(sampleShader, std::memory_order_release);
+    activeFrequencyShader.store(frequencyShader, std::memory_order_release);
+    scriptOverBudget.store(false, std::memory_order_release);
+}
+
+void WaviateScriptAudioProcessor::unloadUserScript() noexcept
+{
+    activeSampleShader.store(nullptr, std::memory_order_release);
+    activeFrequencyShader.store(nullptr, std::memory_order_release);
+}
+
+bool WaviateScriptAudioProcessor::isScriptOverBudget() const noexcept
+{
+    return scriptOverBudget.load(std::memory_order_acquire);
+}
+
+void WaviateScriptAudioProcessor::setFuelLimitPreset(waviate::safety::FuelLimitPreset preset) noexcept
+{
+    fuelLimitPreset.store(static_cast<int>(preset), std::memory_order_release);
+}
+
+waviate::safety::FuelLimitPreset WaviateScriptAudioProcessor::getFuelLimitPreset() const noexcept
+{
+    const auto stored = fuelLimitPreset.load(std::memory_order_acquire);
+    const auto presets = waviate::safety::getFuelLimitPresets();
+
+    for (const auto preset : presets)
+        if (stored == static_cast<int>(preset))
+            return preset;
+
+    return waviate::safety::FuelLimitPreset::medium;
+}
+
+void WaviateScriptAudioProcessor::handleScriptOverBudgetFromAudioThread() noexcept
+{
+    unloadUserScript();
+    scriptOverBudget.store(true, std::memory_order_release);
+}
+
+uint64_t WaviateScriptAudioProcessor::calculateCurrentSampleFuelBudget(int shaderCallsForSample) const noexcept
+{
+    return waviate::safety::calculateFuelBudget(getFuelLimitPreset(), shaderCallsForSample);
 }
 
 int WaviateScriptAudioProcessor::getNumPrograms()
@@ -461,44 +515,75 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             midiBlockMessages[static_cast<size_t>(samp)].push_back(midiMessage.getMessage());
     }
 
-    // ----- SampleWise Processing (segment) -----
     SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
+    FrequencyShader freqShader = activeFrequencyShader.load(std::memory_order_acquire);
+    const int shaderCallsPerSample = (sampleShader != nullptr ? mainOutputCh : 0)
+                                   + (freqShader != nullptr ? 1 : 0);
+
+    auto scriptExceededFuel = false;
+
+    // ----- SampleWise Processing (segment) -----
     if (sampleShader) {
         for (int samp = 0; samp < blockNumSamples; ++samp)
         {
-            const uint64_t absoluteSample = samplesSinceAppStart + static_cast<uint64_t>(samp);
-            auto& sampleMidiMessages = midiBlockMessages[static_cast<size_t>(samp)];
+            waviate::safety::FuelState fuelState {
+                calculateCurrentSampleFuelBudget(shaderCallsPerSample),
+                false
+            };
 
-            for (const auto& midiMessage : sampleMidiMessages) {
-                applyMidiToState(
-                    midiMessage,
-                    wavInput->midiNoteOn,
-                    wavInput->midiCCValue,
-                    wavInput->sampleWhenMidiNoteOn,
-                    wavInput->sampleWhenMidiNoteOff,
-                    wavInput->sampleWhenCCValueChanged,
-                    sustainDown,
-                    std::span<bool, midiStateCount>(wavInput->sustainDefer, midiStateCount),
-                    absoluteSample);
-            }
-
-            wavInput->sampleInBlock = samp;
-            wavInput->samplesSinceAppStart = absoluteSample;
-            wavInput->sustain = sustainDown;
-
-            for (int ch = 0; ch < mainOutputCh; ++ch)
             {
-                wavInput->channel = static_cast<uint8_t>(ch);
-                mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
+                waviate::safety::ScopedFuelBudget fuelScope(fuelState);
+                const uint64_t absoluteSample = samplesSinceAppStart + static_cast<uint64_t>(samp);
+                auto& sampleMidiMessages = midiBlockMessages[static_cast<size_t>(samp)];
+
+                for (const auto& midiMessage : sampleMidiMessages) {
+                    applyMidiToState(
+                        midiMessage,
+                        wavInput->midiNoteOn,
+                        wavInput->midiCCValue,
+                        wavInput->sampleWhenMidiNoteOn,
+                        wavInput->sampleWhenMidiNoteOff,
+                        wavInput->sampleWhenCCValueChanged,
+                        sustainDown,
+                        std::span<bool, midiStateCount>(wavInput->sustainDefer, midiStateCount),
+                        absoluteSample);
+                }
+
+                wavInput->sampleInBlock = samp;
+                wavInput->samplesSinceAppStart = absoluteSample;
+                wavInput->sustain = sustainDown;
+
+                for (int ch = 0; ch < mainOutputCh; ++ch)
+                {
+                    wavInput->channel = static_cast<uint8_t>(ch);
+                    mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
+
+                    if (fuelState.exhausted)
+                        break;
+                }
             }
 
-            sampleMidiMessages.clear();
+            midiBlockMessages[static_cast<size_t>(samp)].clear();
+
+            if (fuelState.exhausted)
+            {
+                scriptExceededFuel = true;
+                break;
+            }
         }
     }
 
-    FrequencyShader freqShader = activeFrequencyShader.load(std::memory_order_acquire);
     if (freqShader) {
 
+    }
+
+    if (scriptExceededFuel)
+    {
+        handleScriptOverBudgetFromAudioThread();
+        mainOut.clear();
+        samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
+        pushVisualizerSamples();
+        return;
     }
 
     samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);

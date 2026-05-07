@@ -11,6 +11,7 @@
 #include <JuceHeader.h>
 #include "WaviateInput.h"
 #include "AbstractCompiler.h"
+#include "WaviateSafety.h"
 #include <array>
 #include <atomic>
 
@@ -61,6 +62,12 @@ public:
     void loadProgram(const juce::File& file);
     void setProcessingEnabled(bool shouldBeEnabled);
     bool isProcessingEnabled() const;
+    void beginUserScriptCompile() noexcept;
+    void installCompiledShaders(SampleShader sampleShader, FrequencyShader frequencyShader) noexcept;
+    void unloadUserScript() noexcept;
+    bool isScriptOverBudget() const noexcept;
+    void setFuelLimitPreset(waviate::safety::FuelLimitPreset preset) noexcept;
+    waviate::safety::FuelLimitPreset getFuelLimitPreset() const noexcept;
 
     //==============================================================================
     int getNumPrograms() override;
@@ -84,6 +91,8 @@ public:
 #endif
 private:
     void InitializeMidiMessageLookup(size_t blockSize);
+    void handleScriptOverBudgetFromAudioThread() noexcept;
+    uint64_t calculateCurrentSampleFuelBudget(int shaderCallsForSample) const noexcept;
 
     std::array<uint8_t, 128> midiNoteOnState{};
     std::array<uint8_t, 128> midiCCValueState{};
@@ -95,6 +104,10 @@ private:
     double currentSampleRate = 44100.0;
     uint64_t samplesSinceAppStart = 0;
     std::atomic<bool> processingEnabled { true };
+    std::atomic<bool> scriptOverBudget { false };
+    std::atomic<int> fuelLimitPreset {
+        static_cast<int>(waviate::safety::FuelLimitPreset::medium)
+    };
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessor)

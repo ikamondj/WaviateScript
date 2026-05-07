@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "AbstractCompiler.h"
+#include "WaviateFuelInstrumentation.h"
+#include "WaviateSafety.h"
 #include "WaviateCppLanguageModel.h"
 
 #include <clang/Basic/DiagnosticIDs.h>
@@ -84,6 +86,7 @@ ClangCompiler<cppMode>::ClangCompiler() {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
+    waviate::safety::registerRuntimeSymbols();
 }
 
 template <bool cppMode>
@@ -343,6 +346,8 @@ template <bool cppMode>
 std::unique_ptr<llvm::ExecutionEngine> ClangCompiler<cppMode>::buildJIT(std::unique_ptr<llvm::Module> m) {
     if (!m) return nullptr;
 
+    waviate::safety::registerRuntimeSymbols();
+
     std::string err;
     llvm::ExecutionEngine* raw = llvm::EngineBuilder(std::move(m))
         .setEngineKind(llvm::EngineKind::JIT)
@@ -388,6 +393,8 @@ void ClangCompiler<cppMode>::compileSource(std::string source, SampleShader& out
 
         throw std::runtime_error("Clang did not emit an LLVM module");
     }
+
+    waviate::safety::instrumentModuleWithFuel(*module);
 
     unit->ee = buildJIT(std::move(module));
     if (!unit->ee)

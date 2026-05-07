@@ -88,10 +88,12 @@ CodeEditor::CodeEditor(WaviateScriptAudioProcessor* processor)
     updateVisualizerButton();
     updateVisualizerScaleLabel();
     applyTheme();
+    startTimerHz(4);
 }
 
 CodeEditor::~CodeEditor()
 {
+    stopTimer();
     document.removeListener(this);
 }
 
@@ -472,6 +474,24 @@ void CodeEditor::codeDocumentTextDeleted(int, int)
         completionMenu->hideCompletions();
 }
 
+void CodeEditor::timerCallback()
+{
+    if (audioProcessor == nullptr)
+        return;
+
+    const auto isOverBudget = audioProcessor->isScriptOverBudget();
+
+    if (isOverBudget && ! hasReportedOverBudget)
+    {
+        addLogMessage("Safety: script exceeded its fuel budget and was unloaded. Recompile to run it again.");
+        hasReportedOverBudget = true;
+    }
+    else if (! isOverBudget)
+    {
+        hasReportedOverBudget = false;
+    }
+}
+
 //==============================================================================
 void CodeEditor::setText(const juce::String& text)
 {
@@ -503,6 +523,9 @@ void CodeEditor::performCompilation()
     
     try
     {
+        audioProcessor->beginUserScriptCompile();
+        hasReportedOverBudget = false;
+
         auto it = audioProcessor->compilers.find(compilerExtension.toStdString());
         if (it == audioProcessor->compilers.end())
         {
@@ -517,9 +540,7 @@ void CodeEditor::performCompilation()
         
         if (outSample != nullptr || outFrequency != nullptr)
         {
-            // Store compiled functions in processor's atomic pointers
-            audioProcessor->activeSampleShader.store(outSample, std::memory_order_release);
-            audioProcessor->activeFrequencyShader.store(outFrequency, std::memory_order_release);
+            audioProcessor->installCompiledShaders(outSample, outFrequency);
 
             juce::String enabledStages;
             if (outSample != nullptr)
@@ -536,11 +557,13 @@ void CodeEditor::performCompilation()
         }
         else
         {
+            audioProcessor->unloadUserScript();
             addLogMessage("Compilation failed - no sample_process or frequency_process entry point was emitted");
         }
     }
     catch (const std::exception& e)
     {
+        audioProcessor->unloadUserScript();
         addLogMessage("Compilation error: " + juce::String(e.what()));
     }
 }

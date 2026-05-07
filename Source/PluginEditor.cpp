@@ -16,7 +16,9 @@ namespace
     constexpr const char* lastOpenedFileSettingKey = "lastOpenedFile";
     constexpr const char* recentFilesSettingKey = "recentFiles";
     constexpr const char* codeCompletionsSettingKey = "codeCompletionsEnabled";
+    constexpr const char* fuelLimitPresetSettingKey = "fuelLimitPreset";
     constexpr int recentFileItemBase = 2000;
+    constexpr int fuelLimitItemBase = 3000;
     constexpr int maxRecentFileCount = 10;
 }
 
@@ -102,6 +104,12 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     showEmptyState();
 
     userSettings = std::make_unique<juce::PropertiesFile>(createSettingsOptions());
+    setFuelLimitPreset(
+        waviate::safety::fuelLimitPresetFromId(
+            userSettings->getValue(fuelLimitPresetSettingKey,
+                                   waviate::safety::getFuelLimitPresetId(audioProcessor.getFuelLimitPreset()))),
+        false,
+        false);
     setCompletionsEnabled(userSettings->getBoolValue(codeCompletionsSettingKey, true), false);
     selectTheme(userSettings->getValue("theme", WaviateThemes::fallback().id), false);
     loadLastOpenedFileIfAvailable();
@@ -271,15 +279,35 @@ void WaviateScriptAudioProcessorEditor::showViewMenu()
 void WaviateScriptAudioProcessorEditor::showToolsMenu()
 {
     constexpr int completionsItemId = 1;
+    juce::PopupMenu fuelLimitMenu;
+    const auto fuelLimitPresets = waviate::safety::getFuelLimitPresets();
+    const auto activeFuelLimit = audioProcessor.getFuelLimitPreset();
+
+    for (int i = 0; i < static_cast<int>(fuelLimitPresets.size()); ++i)
+    {
+        const auto preset = fuelLimitPresets[static_cast<size_t>(i)];
+        fuelLimitMenu.addItem(fuelLimitItemBase + i,
+                              waviate::safety::getFuelLimitPresetName(preset),
+                              true,
+                              preset == activeFuelLimit);
+    }
 
     juce::PopupMenu toolsMenu;
     toolsMenu.addItem(completionsItemId, "Completions", true, codeEditor.areCompletionsEnabled());
+    toolsMenu.addSubMenu("Fuel Limits", fuelLimitMenu);
 
     toolsMenu.showMenuAsync(juce::PopupMenu::Options()
         .withTargetComponent(&toolsMenuButton),
-        [this](int result) {
+        [this, fuelLimitPresets](int result) {
             if (result == completionsItemId)
+            {
                 setCompletionsEnabled(! codeEditor.areCompletionsEnabled(), true);
+                return;
+            }
+
+            const auto fuelLimitIndex = result - fuelLimitItemBase;
+            if (fuelLimitIndex >= 0 && fuelLimitIndex < static_cast<int>(fuelLimitPresets.size()))
+                setFuelLimitPreset(fuelLimitPresets[static_cast<size_t>(fuelLimitIndex)], true, true);
         });
 }
 
@@ -717,6 +745,27 @@ void WaviateScriptAudioProcessorEditor::setCompletionsEnabled(bool shouldBeEnabl
     {
         userSettings->setValue(codeCompletionsSettingKey, shouldBeEnabled);
         userSettings->saveIfNeeded();
+    }
+}
+
+void WaviateScriptAudioProcessorEditor::setFuelLimitPreset(waviate::safety::FuelLimitPreset preset,
+                                                           bool persistSelection,
+                                                           bool attemptRecompile)
+{
+    audioProcessor.setFuelLimitPreset(preset);
+
+    if (persistSelection && userSettings != nullptr)
+    {
+        userSettings->setValue(fuelLimitPresetSettingKey, waviate::safety::getFuelLimitPresetId(preset));
+        userSettings->saveIfNeeded();
+    }
+
+    if (attemptRecompile && codeEditor.isVisible() && codeEditor.getText().trim().isNotEmpty())
+    {
+        codeEditor.addLogMessage("Fuel limit set to "
+            + waviate::safety::getFuelLimitPresetName(preset)
+            + "; recompiling current shader.");
+        codeEditor.compileCurrentSource();
     }
 }
 

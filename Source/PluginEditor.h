@@ -75,6 +75,9 @@ private:
     void applyTheme(const WaviateTheme& theme, bool persistSelection);
     void selectTheme(const juce::String& themeId, bool persistSelection);
     void setCompletionsEnabled(bool shouldBeEnabled, bool persistSelection);
+    void setFuelLimitPreset(waviate::safety::FuelLimitPreset preset,
+                            bool persistSelection,
+                            bool attemptRecompile);
     static juce::PropertiesFile::Options createSettingsOptions();
 
     WaviateScriptAudioProcessor& audioProcessor;

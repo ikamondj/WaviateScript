@@ -173,8 +173,12 @@ target_sources(WaviateScript
         Source/Waviate.hpp
         Source/WaviateCppLanguageModel.cpp
         Source/WaviateCppLanguageModel.h
+        Source/WaviateFuelInstrumentation.cpp
+        Source/WaviateFuelInstrumentation.h
         Source/WaviateShaderSerializer.cpp
         Source/WaviateShaderSerializer.h
+        Source/WaviateSafety.cpp
+        Source/WaviateSafety.h
         Source/WaviateInput.h
 )
 
@@ -264,6 +268,7 @@ if(COMMAND llvm_map_components_to_libnames)
         analysis
         passes
         scalaropts
+        transformutils
         instcombine
         bitreader
         bitwriter
