@@ -173,6 +173,8 @@ target_sources(WaviateScript
         Source/Waviate.hpp
         Source/WaviateCppLanguageModel.cpp
         Source/WaviateCppLanguageModel.h
+        Source/WaviateShaderSerializer.cpp
+        Source/WaviateShaderSerializer.h
         Source/WaviateInput.h
 )
 
