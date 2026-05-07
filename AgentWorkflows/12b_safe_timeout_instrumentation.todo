@@ -1,0 +1,9 @@
+Implement LLVM IR fuel metering for user code.
+
+- Before JIT, run an LLVM pass that instruments loop backedges and function/basic-block entries.
+- Each processBlock receives a fixed fuel budget derived from safety mode, block size, and user settings.
+- Instrumented code decrements fuel and traps when exhausted.
+- On trap, abort the current script execution and return a safe fallback buffer.
+- Mark the script as over-budget and unload user script. User would have to recompile to get audio again. Unloading is essentially the same as at app startup when no DSP code is loaded or the atomic pointer to the shader code isn't initialized.
+- Set reasonable fuel limits as default and a persistent setting tools->fuel limits->(minimal, low, medium, high, massive). on selecting a new fuel limit the code attempts an immediate recompile.
+
