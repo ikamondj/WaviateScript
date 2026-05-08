@@ -500,49 +500,32 @@ void CodeEditor::performCompilation()
     }
     
     const auto sourceCode = getText();
-    
-    try
-    {
-        auto it = audioProcessor->compilers.find(compilerExtension.toStdString());
-        if (it == audioProcessor->compilers.end())
-        {
-            addLogMessage("Error: Waviate Shading Language compiler not found");
-            return;
-        }
-        
-        SampleShader outSample = nullptr;
-        FrequencyShader outFrequency = nullptr;
-        
-        it->second->compileSource(sourceCode.toStdString(), outSample, outFrequency);
-        
-        if (outSample != nullptr || outFrequency != nullptr)
-        {
-            // Store compiled functions in processor's atomic pointers
-            audioProcessor->activeSampleShader.store(outSample, std::memory_order_release);
-            audioProcessor->activeFrequencyShader.store(outFrequency, std::memory_order_release);
 
-            juce::String enabledStages;
-            if (outSample != nullptr)
-                enabledStages << "sample";
-            if (outFrequency != nullptr)
-            {
-                if (enabledStages.isNotEmpty())
-                    enabledStages << " + ";
-                enabledStages << "frequency";
-            }
-
-            addLogMessage("Compilation successful (" + enabledStages
-                + (enabledStages.contains("+") ? " stages enabled)" : " stage enabled)"));
-        }
-        else
-        {
-            addLogMessage("Compilation failed - no sample_process or frequency_process entry point was emitted");
-        }
-    }
-    catch (const std::exception& e)
+    const auto result = audioProcessor->compileAndActivateSource(compilerExtension, sourceCode);
+    if (! result)
     {
-        addLogMessage("Compilation error: " + juce::String(e.what()));
+        addLogMessage("Compilation error: " + result.errorMessage);
+        return;
     }
+
+    if (! result.hasSampleShader && ! result.hasFrequencyShader)
+    {
+        addLogMessage("Compilation failed - no sample_process or frequency_process entry point was emitted");
+        return;
+    }
+
+    juce::String enabledStages;
+    if (result.hasSampleShader)
+        enabledStages << "sample";
+    if (result.hasFrequencyShader)
+    {
+        if (enabledStages.isNotEmpty())
+            enabledStages << " + ";
+        enabledStages << "frequency";
+    }
+
+    addLogMessage("Compilation successful (" + enabledStages
+        + (enabledStages.contains("+") ? " stages enabled)" : " stage enabled)"));
 }
 
 //==============================================================================

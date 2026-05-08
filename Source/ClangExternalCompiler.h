@@ -1,6 +1,5 @@
 #pragma once
 
-#include <JuceHeader.h>
 #include <atomic>
 #include <cctype>
 #include <deque>

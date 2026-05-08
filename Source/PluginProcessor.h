@@ -11,6 +11,7 @@
 #include <JuceHeader.h>
 #include "WaviateInput.h"
 #include "AbstractCompiler.h"
+#include "CompilePipeline.h"
 #include <array>
 #include <atomic>
 
@@ -29,6 +30,16 @@ typedef float (*SampleWiseProcessor)(const WaviateSampleInput*, void* state);
 class WaviateScriptAudioProcessor  : public juce::AudioProcessor
 {
 public:
+    struct CompilationActivationResult
+    {
+        bool succeeded = false;
+        bool hasSampleShader = false;
+        bool hasFrequencyShader = false;
+        juce::String errorMessage;
+
+        explicit operator bool() const noexcept { return succeeded; }
+    };
+
     //==============================================================================
     WaviateScriptAudioProcessor();
     
@@ -59,6 +70,7 @@ public:
     bool isMidiEffect() const override;
     double getTailLengthSeconds() const override;
     void loadProgram(const juce::File& file);
+    CompilationActivationResult compileAndActivateSource(const juce::String& extension, const juce::String& source);
     void setProcessingEnabled(bool shouldBeEnabled);
     bool isProcessingEnabled() const;
 
@@ -73,7 +85,6 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
     std::unique_ptr<WaviateSampleInput> wavInput;
-    std::unordered_map<std::string, std::unique_ptr<AbstractCompiler>> compilers;
     std::vector<std::vector<juce::MidiMessage>> midiBlockMessages;
     juce::AudioVisualiserComponent visualizer;
 #ifdef WAV_SCRIPT_PREMIUM
@@ -95,6 +106,7 @@ private:
     double currentSampleRate = 44100.0;
     uint64_t samplesSinceAppStart = 0;
     std::atomic<bool> processingEnabled { true };
+    waviate::compile::Pipeline compilePipeline;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessor)

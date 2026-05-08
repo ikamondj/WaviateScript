@@ -8,7 +8,6 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "Compilers.h"
 //#include "fftw3.h"
 #include <algorithm>
 #include <array>
@@ -53,7 +52,6 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
     wavInput->sustainDefer = sustainDeferredNoteOff.data();
     wavInput->sampleRate = static_cast<float>(currentSampleRate);
 
-    compilers.insert({ ".wlsl", std::make_unique<ClangCompiler<true>>() });
     InitializeMidiMessageLookup(maxBlockSize);
 }
 
@@ -115,31 +113,38 @@ double WaviateScriptAudioProcessor::getTailLengthSeconds() const
 
 void WaviateScriptAudioProcessor::loadProgram(const juce::File& file)
 {
-    auto ext = file.getFileExtension().toStdString();
-    auto compiler = compilers.find(ext);
-    if (compiler == compilers.end())
+    if (! file.existsAsFile())
         return;
 
     juce::StringArray content;
     file.readLines(content);
-    auto source = content.joinIntoString("\n");
-    SampleShader samp = nullptr;
-    FrequencyShader freq = nullptr;
+    static_cast<void>(compileAndActivateSource(file.getFileExtension(), content.joinIntoString("\n")));
+}
+
+WaviateScriptAudioProcessor::CompilationActivationResult
+WaviateScriptAudioProcessor::compileAndActivateSource(const juce::String& extension, const juce::String& source)
+{
+    CompilationActivationResult result;
 
     try
     {
-        compiler->second->compileSource(source.toStdString(), samp, freq);
+        const auto compiled = compilePipeline.compile(extension.toStdString(), source.toStdString());
+        result.succeeded = true;
+        result.hasSampleShader = compiled.sampleShader != nullptr;
+        result.hasFrequencyShader = compiled.frequencyShader != nullptr;
+
+        if (compiled.hasEntryPoints())
+        {
+            activeSampleShader.store(compiled.sampleShader, std::memory_order_release);
+            activeFrequencyShader.store(compiled.frequencyShader, std::memory_order_release);
+        }
     }
-    catch (const std::exception&)
+    catch (const std::exception& e)
     {
-        return;
+        result.errorMessage = e.what();
     }
 
-    if (samp != nullptr || freq != nullptr)
-    {
-        activeSampleShader.store(samp, std::memory_order_release);
-        activeFrequencyShader.store(freq, std::memory_order_release);
-    }
+    return result;
 }
 
 void WaviateScriptAudioProcessor::setProcessingEnabled(bool shouldBeEnabled)

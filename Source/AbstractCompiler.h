@@ -1,11 +1,13 @@
 #pragma once
+#include "WaviateInput.h"
+
 #include <string>
 
-typedef float (*SampleShader)(const struct WaviateSampleInput*, struct WaviateSampleStateWriter*);
-typedef struct WaviateComplex (*FrequencyShader)(const struct WaviateFrequencyInput*, struct WaviateFrequencyStateWriter*);
+using SampleShader = float (*) (const WaviateSampleInput*, WaviateSampleStateWriter*);
+using FrequencyShader = WaviateComplex (*) (const WaviateFrequencyInput*, WaviateFrequencyStateWriter*);
 
 class AbstractCompiler {
-
 public:
-    virtual void compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) {};
+    virtual ~AbstractCompiler() = default;
+    virtual void compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) = 0;
 };

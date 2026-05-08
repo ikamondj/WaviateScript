@@ -1,0 +1,4 @@
+float SampleProcess(const WaviateSample& wav)
+{
+    return wav.getIncomingSample();
+}

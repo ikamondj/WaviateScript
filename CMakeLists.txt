@@ -3,10 +3,12 @@ cmake_minimum_required(VERSION 3.24)
 project(WaviateScript VERSION 1.0.0 LANGUAGES C CXX)
 
 include(FetchContent)
+include(CTest)
 
 option(WAVIATESCRIPT_PREMIUM "Build WaviateScript with WSPremium features" OFF)
 option(WAVIATESCRIPT_COPY_PLUGIN_AFTER_BUILD "Ask JUCE to copy built plugin artifacts to the local plugin folders" OFF)
 option(WAVIATESCRIPT_REQUIRE_FFTW "Fail CMake configure when FFTW is not available" OFF)
+option(WAVIATESCRIPT_BUILD_TESTS "Build the WaviateScript unit test executable" ${BUILD_TESTING})
 
 set(WAVIATESCRIPT_JUCE_DIR "" CACHE PATH "Path to a local JUCE 8.0.12 checkout")
 set(WAVIATESCRIPT_PREMIUM_SOURCE_DIR "" CACHE PATH "Path to the WSPremium source checkout")
@@ -57,6 +59,14 @@ find_package(Clang CONFIG REQUIRED)
 
 message(STATUS "Using LLVM ${LLVM_PACKAGE_VERSION} from ${LLVM_DIR}")
 message(STATUS "Using Clang package from ${Clang_DIR}")
+
+function(waviate_configure_msvc_llvm_compat target_name)
+    if(MSVC)
+        # The packaged Windows LLVM/Clang binaries are built against the release CRT.
+        set_property(TARGET "${target_name}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+        target_compile_definitions("${target_name}" PRIVATE $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>)
+    endif()
+endfunction()
 
 if(WIN32 AND TARGET LLVMDebugInfoPDB)
     set(WAVIATESCRIPT_DIAGUIDS_LIB "")
@@ -127,6 +137,37 @@ if(APPLE)
     list(APPEND WAVIATESCRIPT_PLUGIN_FORMATS AU)
 endif()
 
+set(WAVIATESCRIPT_CORE_SOURCES
+    Source/AbstractCompiler.cpp
+    Source/AbstractCompiler.h
+    Source/ClangExternalCompiler.h
+    Source/CompilePipeline.cpp
+    Source/CompilePipeline.h
+    Source/WasmCompiler.cpp
+    Source/WasmCompiler.h
+    Source/Waviate.h
+    Source/Waviate.hpp
+    Source/WaviateCppLanguageModel.cpp
+    Source/WaviateCppLanguageModel.h
+    Source/WaviateShaderSerializer.cpp
+    Source/WaviateShaderSerializer.h
+    Source/WaviateInput.h
+)
+
+add_library(WaviateScriptCore STATIC ${WAVIATESCRIPT_CORE_SOURCES})
+target_compile_features(WaviateScriptCore PUBLIC cxx_std_20)
+target_include_directories(WaviateScriptCore
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+        "${LLVM_INCLUDE_DIRS}"
+        "${CLANG_INCLUDE_DIRS}"
+)
+target_link_libraries(WaviateScriptCore
+    PUBLIC
+        juce::juce_core
+)
+waviate_configure_msvc_llvm_compat(WaviateScriptCore)
+
 juce_add_plugin(WaviateScript
     VERSION ${PROJECT_VERSION}
     COMPANY_NAME "yourcompany"
@@ -148,16 +189,12 @@ juce_generate_juce_header(WaviateScript)
 
 target_sources(WaviateScript
     PRIVATE
-        Source/AbstractCompiler.cpp
-        Source/AbstractCompiler.h
         Source/CFileTemplateGenerator.cpp
         Source/CFileTemplateGenerator.h
-        Source/ClangExternalCompiler.h
         Source/CodeEditor.cpp
         Source/CodeEditor.h
         Source/CodeEditorCompletion.cpp
         Source/CodeEditorCompletion.h
-        Source/Compilers.h
         Source/CppFileTemplateGenerator.cpp
         Source/CppFileTemplateGenerator.h
         Source/LockFreeFifo.h
@@ -167,15 +204,6 @@ target_sources(WaviateScript
         Source/PluginEditor.h
         Source/PluginProcessor.cpp
         Source/PluginProcessor.h
-        Source/WasmCompiler.cpp
-        Source/WasmCompiler.h
-        Source/Waviate.h
-        Source/Waviate.hpp
-        Source/WaviateCppLanguageModel.cpp
-        Source/WaviateCppLanguageModel.h
-        Source/WaviateShaderSerializer.cpp
-        Source/WaviateShaderSerializer.h
-        Source/WaviateInput.h
 )
 
 target_compile_features(WaviateScript PRIVATE cxx_std_20)
@@ -189,8 +217,6 @@ target_compile_definitions(WaviateScript
 target_include_directories(WaviateScript
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Source"
-        "${LLVM_INCLUDE_DIRS}"
-        "${CLANG_INCLUDE_DIRS}"
 )
 
 if(FFTW3_INCLUDE_DIR)
@@ -199,6 +225,7 @@ endif()
 
 target_link_libraries(WaviateScript
     PRIVATE
+        WaviateScriptCore
         juce::juce_audio_basics
         juce::juce_audio_devices
         juce::juce_audio_formats
@@ -214,18 +241,7 @@ target_link_libraries(WaviateScript
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
-
-if(FFTW3F_LIBRARY)
-    target_link_libraries(WaviateScript PRIVATE "${FFTW3F_LIBRARY}")
-endif()
-
-if(FFTW3_LIBRARY)
-    target_link_libraries(WaviateScript PRIVATE "${FFTW3_LIBRARY}")
-endif()
-
-if(FFTW3L_LIBRARY)
-    target_link_libraries(WaviateScript PRIVATE "${FFTW3L_LIBRARY}")
-endif()
+waviate_configure_msvc_llvm_compat(WaviateScript)
 
 set(WAVIATESCRIPT_CLANG_TARGETS
     clangFrontend
@@ -247,7 +263,7 @@ set(WAVIATESCRIPT_CLANG_TARGETS
 
 foreach(clang_target IN LISTS WAVIATESCRIPT_CLANG_TARGETS)
     if(TARGET "${clang_target}")
-        target_link_libraries(WaviateScript PRIVATE "${clang_target}")
+        target_link_libraries(WaviateScriptCore PUBLIC "${clang_target}")
     endif()
 endforeach()
 
@@ -270,7 +286,53 @@ if(COMMAND llvm_map_components_to_libnames)
         irreader
         object
     )
-    target_link_libraries(WaviateScript PRIVATE ${WAVIATESCRIPT_LLVM_LIBS})
+    target_link_libraries(WaviateScriptCore PUBLIC ${WAVIATESCRIPT_LLVM_LIBS})
+endif()
+
+if(FFTW3F_LIBRARY)
+    target_link_libraries(WaviateScript PRIVATE "${FFTW3F_LIBRARY}")
+endif()
+
+if(FFTW3_LIBRARY)
+    target_link_libraries(WaviateScript PRIVATE "${FFTW3_LIBRARY}")
+endif()
+
+if(FFTW3L_LIBRARY)
+    target_link_libraries(WaviateScript PRIVATE "${FFTW3L_LIBRARY}")
+endif()
+
+if(WAVIATESCRIPT_BUILD_TESTS)
+    add_executable(WaviateScriptTests
+        Tests/TestMain.cpp
+        Tests/TestSupport/WaviateUnitTest.h
+        Tests/Compile/CompileTestHelpers.cpp
+        Tests/Compile/CompileTestHelpers.h
+        Tests/Compile/CompilePipelineTests.cpp
+        Tests/Serialization/ShaderSerializerTests.cpp
+    )
+    target_compile_features(WaviateScriptTests PRIVATE cxx_std_20)
+    target_include_directories(WaviateScriptTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Tests"
+            "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+    )
+    target_compile_definitions(WaviateScriptTests
+        PRIVATE
+            WAVIATESCRIPT_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(WaviateScriptTests
+        PRIVATE
+            WaviateScriptCore
+            juce::juce_core
+    )
+    waviate_configure_msvc_llvm_compat(WaviateScriptTests)
+    set_target_properties(WaviateScriptTests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/bin"
+    )
+    add_test(NAME WaviateScript.UnitTests COMMAND WaviateScriptTests)
+    set_tests_properties(WaviateScript.UnitTests PROPERTIES
+        CONFIGURATIONS "Release;RelWithDebInfo;MinSizeRel"
+    )
 endif()
 
 if(WAVIATESCRIPT_PREMIUM)
@@ -311,6 +373,7 @@ if(WAVIATESCRIPT_PREMIUM)
             juce::juce_gui_extra
             juce::juce_osc
     )
+    waviate_configure_msvc_llvm_compat(WSPremium)
 
     target_compile_definitions(WaviateScript PRIVATE WAV_SCRIPT_PREMIUM=1)
     target_include_directories(WaviateScript PRIVATE "${WAVIATESCRIPT_PREMIUM_SOURCE_DIR}")
@@ -375,7 +438,7 @@ if(WIN32)
         message(WARNING "No LLVM runtime DLLs were discovered for staging. Standalone or VST3 binaries may fail to launch if LLVM-C.dll, zlib1.dll, or zstd.dll are not on PATH.")
     endif()
 
-    foreach(plugin_runtime_target IN ITEMS WaviateScript_Standalone WaviateScript_VST3)
+    foreach(plugin_runtime_target IN ITEMS WaviateScript_Standalone WaviateScript_VST3 WaviateScriptTests)
         if(TARGET "${plugin_runtime_target}" AND WAVIATESCRIPT_RUNTIME_DLLS)
             add_custom_command(
                 TARGET "${plugin_runtime_target}" POST_BUILD
