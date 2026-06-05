@@ -52,6 +52,9 @@ struct FieldSymbol
 const std::vector<FunctionSymbol>& waviateCoreMemberFunctions();
 const std::vector<FunctionSymbol>& waviateSampleMemberFunctions();
 const std::vector<FunctionSymbol>& waviateFrequencyMemberFunctions();
+const std::vector<FunctionSymbol>& waviateGlobalFunctions();
+const std::vector<FunctionSymbol>& cMathFunctions();
+const std::vector<FieldSymbol>& cMathConstants();
 const std::vector<FieldSymbol>& waviateSampleInputFields();
 const std::vector<FieldSymbol>& waviateFrequencyInputFields();
 const std::vector<FieldSymbol>& waviateComplexFields();

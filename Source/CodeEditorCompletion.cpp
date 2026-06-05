@@ -459,6 +459,16 @@ std::vector<CompletionItem> CompletionProvider::getGlobalCompletions(const juce:
         return makeFunctionCompletion(symbol, false);
     });
 
+    appendCompletions(result, waviate::language::waviateGlobalFunctions(), [](const FunctionSymbol& symbol) {
+        return makeFunctionCompletion(symbol, true);
+    });
+
+    appendCompletions(result, waviate::language::cMathFunctions(), [](const FunctionSymbol& symbol) {
+        return makeFunctionCompletion(symbol, true);
+    });
+
+    appendCompletions(result, waviate::language::cMathConstants(), makeFieldCompletion);
+
     appendCompletions(result, waviate::language::cppBuiltinTypes(), makeFieldCompletion);
     appendCompletions(result, waviate::language::cppKeywords(), makeFieldCompletion);
 
@@ -929,7 +939,7 @@ juce::String CompletionPopupMenu::getKindLabel(CompletionItem::Kind kind)
         case CompletionItem::Kind::Type: return "type";
         case CompletionItem::Kind::Constant: return "const";
         case CompletionItem::Kind::Class: return "cls";
-        case CompletionItem::Kind::Method: return "meth";
+        case CompletionItem::Kind::Method: return "mthd";
         case CompletionItem::Kind::Variable: return "var";
     }
 

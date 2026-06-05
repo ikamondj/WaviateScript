@@ -1,0 +1,12 @@
+Need to implement a pipeline so that if the user ever calls a function wav.loadAudio(string/char* fileLocation),
+it will lazily load the first time the engine sees a call to that exact URL. once resolved, this will send to a consumer
+on a background thread and move on returning an pending WaviateAudio object. If pending or loading still, the function will essentially return an audio clip of length 1 sample and value 0 in that sample.
+once loaded, the WaviateAudio object will let users sample it in a few ways. clip.read(float x)
+this acts exactly like texture sampling but its 1d, and it has optional args. one enum arg which sets the sample end behavior. clamp to 01, wrap, or reflect (zigzag/triangle wave off it).
+another that lets the user choose nearest neighbor, linear interp (default), 
+you can also do clip.readSample(sampleIndex) for direct lookups of exact samples.
+clip.length() is a function as well.
+also clip.readSpectrum(float x, float y, opt args...) which has the same optional args as normal read,
+but it operates on a pre-cached 2d representation of the clip like when you convert audio to an image spectrogram.
+
+As part of this, implement the main pipeline to set this up. the classes and enums it needs, the placement of this as a functoin in the code and so on.

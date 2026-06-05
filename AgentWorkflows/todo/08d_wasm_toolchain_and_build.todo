@@ -1,0 +1,84 @@
+Task:
+Plan and implement the C/C++ WebAssembly compiler toolchain and build integration for WaviateScript.
+
+Background:
+The native compiler path uses Clang/LLVM headers and libraries from the JUCE project configuration and emits LLVM modules for MCJIT. The `.jucer` file links many LLVM and Clang libraries, includes `WasmCompiler.cpp`, and defines premium build configurations through `WAV_SCRIPT_PREMIUM=1`. WebAssembly compilation needs a different target triple, export/import policy, runtime assumptions, and packaging plan.
+
+Dependencies:
+- Depends on `08a_wasm_scope_and_architecture.todo`.
+- Depends on `08b_wasm_block_abi_and_memory.todo`.
+- Should coordinate with `08c_wasm_shader_wrapper_codegen.todo`.
+
+Requirements:
+- Inspect these paths before implementation:
+  - `WaviateScript.jucer`
+  - `Build-Installer.ps1`
+  - `WaviateScript.wxs`
+  - `.github/workflows/` if build automation is touched.
+  - `Source/ClangExternalCompiler.h`
+  - `Source/WasmCompiler.h`
+  - `Source/WasmCompiler.cpp`
+  - `Source/Compilers.h`
+  - `Source/WSPremium/RustCompiler.cpp`
+  - `AgentWorkflows/changelogs/INSTALLER_SETUP.md`
+  - `AgentWorkflows/changelogs/INSTALLER_GUIDE.md`
+- Decide whether WebAssembly compilation uses:
+  - In-process Clang APIs, parallel to `ClangCompiler`.
+  - External `clang` invocation.
+  - LLVM module emission followed by object/link steps.
+  - A staged MVP with a clear later migration path.
+- Define and implement or document the Clang target configuration:
+  - Target triple such as `wasm32-unknown-unknown` or another justified choice.
+  - C and C++ language modes.
+  - Optimization level.
+  - Debug info level for developer diagnostics.
+  - No OS/syscall assumptions for sandboxing.
+  - No unrestricted standard library unless explicitly scoped.
+  - Include path for Waviate SDK headers.
+  - Preprocessor defines for WebAssembly target and ABI version.
+- Define exports:
+  - Block entrypoint exports from `08c`.
+  - ABI version export.
+  - Memory export or import policy.
+  - Optional diagnostic export if safe.
+- Define imports:
+  - Prefer no imports for deterministic sandboxing.
+  - Any allowed imports must be explicitly listed, versioned, and proven real-time-safe.
+- Define artifact policy:
+  - In-memory `.wasm` bytes for editor compile path.
+  - Optional cached `.wasm` files for debug builds only.
+  - Diagnostics captured for the CodeEditor log.
+  - No temp file dependency on the audio thread.
+- Define Rust scope:
+  - If Rust WebAssembly is immediate, choose `wasm32-unknown-unknown`, crate layout, exports, panic policy, and premium gating.
+  - If Rust WebAssembly is deferred, create a later todo and keep `WasmCompiler::compileRust` explicitly out of current implementation.
+- Update build configuration only after the design is accepted:
+  - JUCE project entries.
+  - LLVM/Clang libraries needed for WebAssembly codegen/linking.
+  - Runtime library dependencies.
+  - Installer packaging if runtime binaries are included.
+  - Public vs premium configurations.
+
+Acceptance criteria:
+- The toolchain path can produce valid `.wasm` bytes for a minimal C shader wrapper without requiring OS imports.
+- C and C++ compilation paths are either implemented or specified with exact next steps.
+- The build configuration lists all new LLVM/Clang/runtime dependencies and why each is needed.
+- Diagnostics are designed to flow back to `CodeEditor::performCompilation` or the processor load path.
+- No compilation, file IO dependency, or linker work is required on the audio thread.
+- Rust WebAssembly support is explicitly classified as in-scope or deferred.
+- Public and premium build implications are documented.
+
+Testing:
+- Add or plan a compiler smoke test for a sample-only C shader.
+- Add or plan a compiler smoke test for a frequency-only C shader.
+- Add or plan a compiler smoke test for a C++ shader using the C++ shim.
+- Validate exported symbols with a WebAssembly inspection tool or runtime API.
+- Validate that forbidden imports fail compilation or validation.
+- Verify Debug and Release project configurations still build after any `.jucer` changes.
+
+Out of scope:
+- Runtime instantiation in `processBlock`.
+- Audio-thread dispatch.
+- Final runtime choice if `08a` leaves it as a shortlist.
+- User documentation updates.
+- Implementing Rust WebAssembly unless explicitly approved by `08a`.

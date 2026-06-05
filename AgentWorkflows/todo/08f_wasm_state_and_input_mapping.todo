@@ -1,0 +1,119 @@
+Task:
+Map existing WaviateScript input, output, MIDI, sidechain, frequency, history, state, and premium feature data into the WebAssembly block ABI.
+
+Background:
+`WaviateSampleInput` and `WaviateFrequencyInput` contain the current shader-visible API. The native path passes pointers to host-owned buffers. WebAssembly needs equivalent data represented through linear-memory offsets and stable snapshots. This task turns the ABI design into a field-by-field mapping and identifies host-side staging responsibilities.
+
+Dependencies:
+- Depends on `08b_wasm_block_abi_and_memory.todo`.
+- Should coordinate with `08e_wasm_runtime_integration.todo`.
+
+Requirements:
+- Inspect these paths before implementation:
+  - `Source/WaviateInput.h`
+  - `Source/PluginProcessor.cpp`
+  - `Source/PluginProcessor.h`
+  - `Source/LockFreeFifo.h`
+  - `Docs/input_api_c.md`
+  - `Docs/rules.md`
+  - `Docs/home.md`
+  - `Source/WSPremium/OSCInput.h`
+  - `Source/WSPremium/OSCInterface.h`
+  - `Source/GameControllerInput.h`
+  - `Source/GameController.h`
+- Create a field-by-field mapping table for `WaviateSampleInput`:
+  - `samplesSinceAppStart`
+  - `sampleInBlock`
+  - `blockSize`
+  - `inputChannelCount`
+  - `sideChainChannelCount`
+  - `sampleMemoryCount`
+  - `channelCount`
+  - `channel`
+  - `midiNoteOn`
+  - `midiCCValue`
+  - `sampleWhenMidiNoteOn`
+  - `sampleWhenMidiNoteOff`
+  - `sampleWhenCCValueChanged`
+  - `sustain`
+  - `sustainDefer`
+  - `controllerCount`
+  - `controllerButtonMask`
+  - `sampleWhenControllerButtonChanged`
+  - `controllerButtonCount`
+  - `controllerAxisValue`
+  - `sampleWhenControllerAxisChanged`
+  - `controllerAxisCount`
+  - premium `oscStrings`
+  - premium `oscInts`
+  - premium `oscColors`
+  - premium `oscFloats`
+  - `sampleRate`
+  - `previousSamples`
+  - `inputDeviceSamples`
+  - `inputSideChainSamples`
+  - `currentSampleData`
+- Create a field-by-field mapping table for `WaviateFrequencyInput`:
+  - `sampleWidth`
+  - `bin`
+  - `totalBinCount`
+  - `channelCount`
+  - `channel`
+  - `currentFrequencyData`
+  - `inputDeviceData`
+  - `inputSideChainFrequencyData`
+  - `sampleRate`
+  - `samplesSinceAppStart`
+- Define sample-stage staging:
+  - How JUCE `AudioBuffer<float>` main input and output buffers are copied or exposed.
+  - How sidechain data is represented when unavailable.
+  - How channel counts and block sizes are validated.
+  - How previous sample history is allocated, updated, and bounded.
+  - How current output data is initialized at the start of the sample stage.
+- Define MIDI staging:
+  - How `juce::MidiBuffer` events update per-sample note and CC state.
+  - How sample counters for MIDI changes are maintained.
+  - How sustain and deferred note-off state persists.
+  - Whether MIDI state is snapshotted for the whole block or updated inside the module loop at each sample.
+- Define mutable shader state:
+  - What state writer data exists today.
+  - What future state reader/writer layout should look like in WebAssembly.
+  - How state persists between block calls.
+  - How state resets on shader replacement.
+- Define frequency-domain staging:
+  - Whether FFT/windowing/overlap-add stays host-side for the MVP.
+  - Where complex input bins are written in memory.
+  - Where complex output bins are read from memory.
+  - How pass-through frequency behavior is represented.
+  - How sample output from the sample stage feeds the frequency stage when both exist.
+- Define premium mapping:
+  - OSC arrays appear only under `WAV_SCRIPT_PREMIUM`.
+  - Controller/HID data appears only under premium feature flags unless product scope changes.
+  - Public ABI versions must reject premium-only flags/data.
+- Identify naming mismatches and doc/code drift:
+  - Docs use names such as `positionInBlock` and `outputChannel`.
+  - Source currently uses `sampleInBlock`, `channel`, and `channelCount`.
+  - Future implementation must either preserve source names or intentionally migrate them.
+
+Acceptance criteria:
+- Every existing `WaviateSampleInput` and `WaviateFrequencyInput` field has a WebAssembly mapping or an explicit deferred/not-supported note.
+- The mapping describes block memory ownership and copy direction for each buffer.
+- MIDI and state sequencing preserve the current shader semantic goal: state changes can affect later sample/bin calls inside the same stage.
+- Sample-then-frequency behavior is clearly described for shared buffers.
+- Premium data is gated and cannot be read from public builds.
+- Frequency processing responsibilities are split between host FFT/windowing/overlap-add and module bin logic.
+
+Testing:
+- Add or plan field-level serialization tests for sample input memory.
+- Add or plan field-level serialization tests for frequency input memory.
+- Add or plan MIDI sequencing tests across a block.
+- Add or plan sidechain unavailable/available tests.
+- Add or plan public vs premium ABI feature flag tests.
+- Add or plan sample-history persistence tests.
+
+Out of scope:
+- Choosing the WebAssembly runtime.
+- Implementing wrapper codegen.
+- Implementing the full FFT pipeline.
+- User-facing documentation.
+- Refactoring current input structs unless a later implementation task explicitly requires it.

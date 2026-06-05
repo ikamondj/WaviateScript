@@ -1,0 +1,91 @@
+Task:
+Plan and implement WebAssembly runtime integration in the audio engine, including module activation, block invocation, teardown, and real-time-safe error handling.
+
+Background:
+The current processor stores `activeSampleShader` and `activeFrequencyShader` as atomic native function pointers. The WebAssembly path needs a different dispatch object: compiled bytes, validated module, runtime instance, linear memory, ABI bindings, and block entrypoints. Compilation and instantiation must happen away from the audio thread. `processBlock` should only use prevalidated, preallocated runtime state.
+
+Dependencies:
+- Depends on `08a_wasm_scope_and_architecture.todo`.
+- Depends on `08b_wasm_block_abi_and_memory.todo`.
+- Depends on `08c_wasm_shader_wrapper_codegen.todo`.
+- Depends on `08d_wasm_toolchain_and_build.todo`.
+- Coordinates with `08f_wasm_state_and_input_mapping.todo`.
+
+Requirements:
+- Inspect these paths before implementation:
+  - `Source/PluginProcessor.h`
+  - `Source/PluginProcessor.cpp`
+  - `Source/CodeEditor.cpp`
+  - `Source/PluginEditor.cpp`
+  - `Source/AbstractCompiler.h`
+  - `Source/WasmCompiler.h`
+  - `Source/WasmCompiler.cpp`
+  - `Source/ClangExternalCompiler.h`
+  - `Source/LockFreeFifo.h`
+  - `Source/WaviateInput.h`
+- Define the runtime object model:
+  - Compiled module or runtime-specific equivalent.
+  - Instance.
+  - Exported memory handle.
+  - Resolved block entrypoint handles.
+  - ABI metadata cache.
+  - Preallocated host staging buffers if needed.
+  - Last non-audio-thread diagnostic.
+  - Atomic active runtime dispatch pointer.
+  - Retired runtime instances kept alive until safe to destroy.
+- Decide how `AbstractCompiler` evolves:
+  - Keep native `SampleShader`/`FrequencyShader` outputs and add a separate WebAssembly compile result.
+  - Introduce a shader program abstraction that can hold native or WebAssembly dispatch.
+  - Use a transitional approach with minimal changes.
+- Ensure compilation, validation, module creation, instantiation, memory sizing, and entrypoint lookup occur off the audio thread.
+- Ensure `processBlock` does only bounded work:
+  - Copy or map block input data into already-sized memory.
+  - Call a block-level WebAssembly entrypoint.
+  - Copy output data back.
+  - Record trap state using preallocated or lock-free mechanisms.
+  - Fall back safely when runtime state is inactive or trapped.
+- Define memory growth policy:
+  - Required memory size is computed before activation.
+  - Memory growth is disabled during audio processing or performed only off thread.
+  - Oversized blocks fail gracefully or use a pre-grown maximum decided in `prepareToPlay`.
+- Define runtime trap behavior:
+  - No exceptions escaping `processBlock`.
+  - No allocation-heavy diagnostics on audio thread.
+  - Muted output, bypass, previous native shader, or last known good WebAssembly module according to the architecture decision.
+  - User-facing diagnostics reported later through editor-safe channels.
+- Define deterministic execution constraints:
+  - No wall-clock imports.
+  - No filesystem/network/process imports.
+  - No unbounded host callbacks.
+  - Optional instruction/fuel limits only if the selected runtime supports them without audio-thread hazards.
+- Preserve stage behavior:
+  - Sample only, frequency only, or sample then frequency are controlled by wrapper/runtime metadata.
+  - Frequency processing must not be invoked when no `frequency_process` stage exists.
+- Define module cache and teardown:
+  - Cache compiled/instantiated modules by source hash and target settings if useful.
+  - Reuse active instances across blocks.
+  - Retire old instances without invalidating an audio-thread pointer.
+  - Release runtime resources outside the audio callback.
+
+Acceptance criteria:
+- The processor has or is designed around a runtime dispatch model that can represent native and WebAssembly shader programs safely.
+- No WebAssembly compilation or instantiation occurs on the audio thread.
+- The audio thread crosses into WebAssembly once per block or per larger processing unit, not once per sample or bin.
+- Runtime traps cannot crash the plugin or throw through `processBlock`.
+- Runtime memory is preallocated or pre-grown before activation.
+- Fallback behavior is implemented or precisely documented.
+- Public/premium runtime behavior respects `WAV_SCRIPT_PREMIUM`.
+
+Testing:
+- Add or plan a fake runtime test that proves `processBlock` invokes one block call per block.
+- Add or plan a trap test that verifies safe fallback and deferred diagnostics.
+- Add or plan activation/retirement tests that swap shaders while audio processing continues.
+- Add or plan oversized-block tests.
+- Add or plan tests for sample-only, frequency-only, and combined stages.
+
+Out of scope:
+- Designing the ABI from scratch.
+- Writing wrapper codegen from scratch.
+- Adding user docs.
+- Implementing new FFT/windowing behavior unless required to wire an already-defined frequency ABI.
+- Enabling Rust WebAssembly beyond the scope decided in `08a`.

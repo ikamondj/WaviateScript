@@ -1,0 +1,83 @@
+Task:
+Define the target architecture for WebAssembly shader execution in WaviateScript and produce a concrete architecture note for future implementation tasks.
+
+Background:
+WaviateScript currently compiles C and C++ shaders with `ClangCompiler` into native in-process function pointers, then the audio processor calls `sample_process` inside host-side loops. `frequency_process` is resolved by the native compiler but is not yet integrated in `processBlock`. A `WasmCompiler` class exists, but it is only a stub.
+
+The WebAssembly path must not mirror the native per-sample or per-bin host call model. The host must cross the WebAssembly VM boundary at block granularity, with loop outlines compiled into or generated around the user's shader functions.
+
+Dependencies:
+- None. This is the first WebAssembly planning and design task.
+
+Requirements:
+- Inspect these paths before writing the architecture note:
+  - `AgentWorkflows/AgentContext.context`
+  - `Source/AbstractCompiler.h`
+  - `Source/ClangExternalCompiler.h`
+  - `Source/WasmCompiler.h`
+  - `Source/WasmCompiler.cpp`
+  - `Source/PluginProcessor.h`
+  - `Source/PluginProcessor.cpp`
+  - `Source/CodeEditor.cpp`
+  - `Source/PluginEditor.cpp`
+  - `Source/WaviateInput.h`
+  - `Source/Compilers.h`
+  - `Source/WSPremium/RustCompiler.h`
+  - `Docs/rules.md`
+  - `Docs/home.md`
+  - `WaviateScript.jucer`
+- Produce a short architecture document or design note in the repo's docs/planning area chosen by the implementing agent.
+- Define the high-level split between:
+  - Native shader execution through `ClangCompiler` and direct function pointers.
+  - WebAssembly shader execution through module artifacts, runtime instances, and block entrypoints.
+- Define the lifecycle for a WebAssembly shader:
+  - Source loaded or edited.
+  - Target selected.
+  - Source wrapped or generated.
+  - Compiled to `.wasm`.
+  - Validated for ABI compatibility.
+  - Instantiated off the audio thread.
+  - Activated atomically for `processBlock`.
+  - Reused across blocks.
+  - Torn down only after the audio thread can no longer access it.
+- Decide whether WebAssembly is a separate compiler target, separate file extension, editor target mode, or both. Include the existing `.wc`, `.wcpp`, `.wrs`, `.wasm`, and `.wwasm` references in that decision.
+- Define fallback behavior when WebAssembly compilation, validation, instantiation, or runtime execution fails.
+- Define public vs premium scope:
+  - C/C++ to WebAssembly should be considered core unless a product decision says otherwise.
+  - Rust to WebAssembly should be explicitly marked either immediate premium scope or later premium/public work.
+  - Premium-only inputs such as OSC and controller/HID state must not leak into public builds.
+- Choose a preferred runtime direction or a shortlist with decision criteria. Compare Wasmtime, WAMR, wasm3, and any other viable embedded runtime by licensing, binary size, startup time, platform support, sandboxing, deterministic execution, and suitability for audio plugin distribution.
+- Identify major risks:
+  - Audio-thread allocations or compilation.
+  - VM boundary overhead.
+  - Runtime traps in `processBlock`.
+  - Memory layout and ABI version skew.
+  - Plugin binary size and installer impact.
+  - Runtime licensing.
+  - Cross-platform JUCE packaging.
+  - User expectations around sandboxed shader sharing.
+
+Acceptance criteria:
+- A design output exists and names the concrete architecture for native vs WebAssembly execution.
+- The design states that WebAssembly entrypoints run at block granularity, never as the primary per-sample or per-bin host-to-VM call model.
+- The design preserves stage behavior:
+  - Sample stage only when `sample_process` exists.
+  - Frequency stage only when `frequency_process` exists.
+  - Sample stage runs before frequency stage when both exist.
+- The design identifies the preferred target shape for `WasmCompiler` and any processor-side runtime holder or dispatch object.
+- The design explicitly explains what happens on compile failure, validation failure, instantiation failure, and runtime trap.
+- The design includes public/premium gating expectations and Rust scope.
+- The design lists follow-up implementation tasks or confirms the dependency order for the existing 08b-08h todos.
+
+Testing:
+- No executable tests are required for this design task.
+- Verify by inspection that the architecture does not require the host to call into WebAssembly once per sample or once per frequency bin.
+- Verify that the design does not require source, docs, build, or runtime changes beyond the chosen design note.
+
+Out of scope:
+- Implementing the WebAssembly runtime.
+- Adding dependencies.
+- Editing `Source/` files.
+- Editing build files.
+- Changing editor UI.
+- Implementing ABI structs or wrapper codegen.
