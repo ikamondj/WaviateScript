@@ -165,6 +165,12 @@ private:
                 selectButton.setButtonText("Select File...");
                 selectButton.onClick = [this] { chooseFile(); };
                 addAndMakeVisible(selectButton);
+
+#ifdef WAV_SCRIPT_PREMIUM
+                urlButton.setButtonText("Enter URL...");
+                urlButton.onClick = [this] { enterUrl(); };
+                addAndMakeVisible(urlButton);
+#endif
             }
             else
             {
@@ -218,7 +224,15 @@ private:
             nameInput.setBounds(top.reduced(2));
 
             if (selectButton.isVisible())
+            {
+#ifdef WAV_SCRIPT_PREMIUM
+                auto halfWidth = bounds.getWidth() / 2;
+                selectButton.setBounds(bounds.removeFromLeft(halfWidth).reduced(2));
+                urlButton.setBounds(bounds.reduced(2));
+#else
                 selectButton.setBounds(bounds.reduced(2));
+#endif
+            }
             else
             {
                 auto halfWidth = bounds.getWidth() / 2;
@@ -250,6 +264,46 @@ private:
                 });
         }
 
+#ifdef WAV_SCRIPT_PREMIUM
+        void enterUrl()
+        {
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions()
+                    .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                    .withTitle("Enter Audio URL")
+                    .withMessage("Please enter the direct URL to an audio file (http/https):")
+                    .withButton("OK")
+                    .withButton("Cancel"),
+                [this](int buttonIndex) {
+                    if (buttonIndex == 1) // OK
+                    {
+                        // To get the text, we actually need to use a custom AlertWindow or just TextEditor.
+                        // For simplicity, let's just use NativeMessageBox if possible, 
+                        // but since juce::AlertWindow::showAsync with textbox is complex,
+                        // let's create a full juce::AlertWindow here.
+                    }
+                });
+            
+            // Re-implementing with custom AlertWindow to get text
+            auto* alert = new juce::AlertWindow("Enter Audio URL", "Please enter the direct URL to an audio file (http/https):", juce::MessageBoxIconType::QuestionIcon);
+            alert->addTextEditor("url", "https://", "URL");
+            alert->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+            alert->enterModalState(true, juce::ModalCallbackFunction::create([this, alert](int result) {
+                if (result == 1)
+                {
+                    juce::String urlStr = alert->getTextEditorContents("url");
+                    if (urlStr.isNotEmpty() && index >= 0 && static_cast<size_t>(index) < processor.getManualClipCount()) {
+                        processor.setManualClipPath(static_cast<size_t>(index), urlStr);
+                        onUpdate();
+                    }
+                }
+                delete alert;
+            }));
+        }
+#endif
+
         void removeClip()
         {
             if (index >= 0 && static_cast<size_t>(index) < processor.getManualClipCount()) {
@@ -268,6 +322,9 @@ private:
 
         juce::TextEditor nameInput;
         juce::TextButton selectButton;
+#ifdef WAV_SCRIPT_PREMIUM
+        juce::TextButton urlButton;
+#endif
         juce::Label pathLabel;
         juce::Label statusLabel;
         juce::TextButton deleteButton;
