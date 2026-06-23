@@ -1,0 +1,238 @@
+#include "WaviateSafety.h"
+
+#include <algorithm>
+#include <mutex>
+#include <new>
+
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/DynamicLibrary.h>
+
+namespace
+{
+thread_local waviate::safety::FuelState* currentFuelState = nullptr;
+thread_local waviate::safety::FuelState fallbackFuelState { 100'000'000ULL, false };
+thread_local waviate::safety::EphemeralArena* currentArena = nullptr;
+
+waviate::safety::FuelState* getActiveFuelState() noexcept
+{
+    return currentFuelState != nullptr ? currentFuelState : &fallbackFuelState;
+}
+
+struct FuelProfile final
+{
+    waviate::safety::FuelLimitPreset preset;
+    const char* id;
+    const char* name;
+    uint64_t baseBudget;
+    uint64_t perShaderCallBudget;
+};
+
+constexpr FuelProfile fuelProfiles[] =
+{
+    { waviate::safety::FuelLimitPreset::minimal, "minimal", "Minimal", 8'000, 1'000 },
+    { waviate::safety::FuelLimitPreset::low,     "low",     "Low",     32'000, 4'000 },
+    { waviate::safety::FuelLimitPreset::medium,  "medium",  "Medium",  128'000, 16'000 },
+    { waviate::safety::FuelLimitPreset::high,    "high",    "High",    512'000, 64'000 },
+    { waviate::safety::FuelLimitPreset::massive, "massive", "Massive", 2'000'000, 256'000 }
+};
+
+const FuelProfile& profileFor (waviate::safety::FuelLimitPreset preset) noexcept
+{
+    for (const auto& profile : fuelProfiles)
+        if (profile.preset == preset)
+            return profile;
+
+    return fuelProfiles[2];
+}
+} // namespace
+
+namespace waviate::safety
+{
+EphemeralArena::EphemeralArena (size_t capacityBytes)
+    : storage (new (std::nothrow) std::byte[capacityBytes]),
+      capacity (storage != nullptr ? capacityBytes : 0)
+{
+}
+
+void EphemeralArena::resetForPass() noexcept
+{
+    offset = 0;
+    exhausted = false;
+    ++generation;
+}
+
+void* EphemeralArena::allocate (uint64_t sizeBytes, uint64_t alignmentBytes) noexcept
+{
+    if (storage == nullptr || sizeBytes == 0)
+        return nullptr;
+
+    auto alignment = static_cast<size_t> (std::max<uint64_t> (1, alignmentBytes));
+
+    if ((alignment & (alignment - 1)) != 0)
+    {
+        auto rounded = size_t { 1 };
+        while (rounded < alignment)
+            rounded <<= 1;
+        alignment = rounded;
+    }
+
+    const auto alignedOffset = (offset + alignment - 1) & ~(alignment - 1);
+
+    if (alignedOffset > capacity || sizeBytes > capacity - alignedOffset)
+    {
+        exhausted = true;
+        waviate_fuel_trap();
+        return nullptr;
+    }
+
+    auto* result = storage.get() + alignedOffset;
+    offset = alignedOffset + static_cast<size_t> (sizeBytes);
+    return result;
+}
+
+ScopedFuelBudget::ScopedFuelBudget (FuelState& state) noexcept
+{
+    previous = currentFuelState;
+    currentFuelState = &state;
+}
+
+ScopedFuelBudget::~ScopedFuelBudget() noexcept
+{
+    currentFuelState = previous;
+}
+
+ScopedArenaPass::ScopedArenaPass (EphemeralArena& arena) noexcept
+{
+    previous = currentArena;
+    arena.resetForPass();
+    currentArena = &arena;
+}
+
+ScopedArenaPass::~ScopedArenaPass() noexcept
+{
+    currentArena = previous;
+}
+
+std::array<FuelLimitPreset, 5> getFuelLimitPresets() noexcept
+{
+    return {
+        FuelLimitPreset::minimal,
+        FuelLimitPreset::low,
+        FuelLimitPreset::medium,
+        FuelLimitPreset::high,
+        FuelLimitPreset::massive
+    };
+}
+
+const char* getFuelLimitPresetId (FuelLimitPreset preset) noexcept
+{
+    return profileFor (preset).id;
+}
+
+juce::String getFuelLimitPresetName (FuelLimitPreset preset)
+{
+    return profileFor (preset).name;
+}
+
+FuelLimitPreset fuelLimitPresetFromId (juce::StringRef id) noexcept
+{
+    for (const auto& profile : fuelProfiles)
+        if (id == juce::StringRef(profile.id))
+            return profile.preset;
+
+    return FuelLimitPreset::medium;
+}
+
+uint64_t calculateFuelBudget (FuelLimitPreset preset, int shaderCallsForSample) noexcept
+{
+    const auto& profile = profileFor (preset);
+    const auto safeShaderCallsForSample = static_cast<uint64_t> (std::max (1, shaderCallsForSample));
+
+    return profile.baseBudget + (safeShaderCallsForSample * profile.perShaderCallBudget);
+}
+
+void registerRuntimeSymbols()
+{
+    static std::once_flag once;
+    std::call_once (once, [] {
+        llvm::sys::DynamicLibrary::AddSymbol ("waviate_consume_fuel",
+                                              reinterpret_cast<void*> (&waviate_consume_fuel));
+        llvm::sys::DynamicLibrary::AddSymbol ("waviate_fuel_trap",
+                                              reinterpret_cast<void*> (&waviate_fuel_trap));
+        llvm::sys::DynamicLibrary::AddSymbol ("__waviate_internal_arena_allocate",
+                                              reinterpret_cast<void*> (&__waviate_internal_arena_allocate));
+        llvm::sys::DynamicLibrary::AddSymbol ("__waviate_internal_arena_generation",
+                                              reinterpret_cast<void*> (&__waviate_internal_arena_generation));
+    });
+}
+
+bool isCurrentThreadFuelExhausted() noexcept
+{
+    return getActiveFuelState()->exhausted;
+}
+
+void setFuelBudget (uint64_t budget) noexcept
+{
+    auto* state = getActiveFuelState();
+    state->remaining = budget;
+    state->exhausted = false;
+}
+
+uint64_t getFuelRemaining() noexcept
+{
+    return getActiveFuelState()->remaining;
+}
+
+uint32_t getFuelExhausted() noexcept
+{
+    return getActiveFuelState()->exhausted ? 1 : 0;
+}
+
+void resetFallbackFuelState() noexcept
+{
+    fallbackFuelState.remaining = 100'000'000ULL;
+    fallbackFuelState.exhausted = false;
+}
+} // namespace waviate::safety
+
+extern "C" uint8_t waviate_consume_fuel (uint64_t amount) noexcept
+{
+    auto* state = getActiveFuelState();
+
+    if (state->exhausted)
+        return 0;
+
+    if (amount == 0)
+        return 1;
+
+    if (state->remaining < amount)
+    {
+        state->remaining = 0;
+        state->exhausted = true;
+        return 0;
+    }
+
+    state->remaining -= amount;
+    return 1;
+}
+
+extern "C" void waviate_fuel_trap() noexcept
+{
+    getActiveFuelState()->exhausted = true;
+}
+
+extern "C" void* __waviate_internal_arena_allocate (uint64_t sizeBytes, uint64_t alignmentBytes) noexcept
+{
+    if (currentArena == nullptr)
+    {
+        waviate_fuel_trap();
+        return nullptr;
+    }
+
+    return currentArena->allocate (sizeBytes, alignmentBytes);
+}
+
+extern "C" uint64_t __waviate_internal_arena_generation() noexcept
+{
+    return currentArena != nullptr ? currentArena->getGeneration() : 0;
+}

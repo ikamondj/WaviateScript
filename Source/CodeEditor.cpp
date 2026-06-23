@@ -567,6 +567,10 @@ void CodeEditor::updateCompletions()
     const auto caretPos = editor->getCaretPos();
     const int caretOffset = caretPos.getPosition();
 
+    std::unique_ptr<waviate::audio::ScopedAudioCacheBinding> cacheBinding;
+    if (audioProcessor != nullptr)
+        cacheBinding = std::make_unique<waviate::audio::ScopedAudioCacheBinding>(&audioProcessor->getAudioCache());
+
     const auto completions = completionProvider->getCompletions(sourceCode, caretOffset);
 
     if (completions.empty())

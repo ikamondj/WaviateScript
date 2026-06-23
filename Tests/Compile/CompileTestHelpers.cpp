@@ -1,4 +1,5 @@
 #include "CompileTestHelpers.h"
+#include "WaviateSafety.h"
 
 #include <array>
 #include <algorithm>
@@ -48,6 +49,8 @@ std::filesystem::path compileFixtureRoot()
 
 CompileResult compileSource(const juce::String& shortName, const juce::String& source, const juce::String& extension)
 {
+    std::printf("[DEBUG] compileSource helper start: %s\n", shortName.toRawUTF8());
+    std::fflush(stdout);
     CompileResult result;
     result.pipeline = std::make_shared<waviate::compile::Pipeline>();
     result.shortName = shortName;
@@ -58,6 +61,7 @@ CompileResult compileSource(const juce::String& shortName, const juce::String& s
         const auto compiled = result.pipeline->compile(extension.toStdString(), source.toStdString());
         result.sampleShader = compiled.sampleShader;
         result.frequencyShader = compiled.frequencyShader;
+        result.runtime = compiled.runtime;
     }
     catch (const std::exception& e)
     {
@@ -79,6 +83,7 @@ CompileResult compileFile(const std::filesystem::path& path)
         const auto compiled = result.pipeline->compileFile(path);
         result.sampleShader = compiled.sampleShader;
         result.frequencyShader = compiled.frequencyShader;
+        result.runtime = compiled.runtime;
     }
     catch (const std::exception& e)
     {
@@ -168,6 +173,7 @@ SampleExecutionResult executeSample(const CompileResult& result, const SampleInv
     input.currentSampleData = outputPointers.data();
 
     SampleExecutionResult executionResult;
+    waviate::audio::ScopedAudioCacheBinding audioCacheBinding(invocation.audioCache);
     executionResult.returnValue = result.sampleShader(&input, nullptr);
     executionResult.selectedOutputSample = outputStorage[static_cast<size_t>(channelIndex)][static_cast<size_t>(sampleIndex)];
     executionResult.outputChannels = std::move(outputStorage);

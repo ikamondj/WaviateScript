@@ -1,0 +1,6 @@
+Implement file loading IO for local files on a hard drive. It should support exact addresses, and allow users to load an audio in the editor, in which case that audio file becomes a shader constant added to the prelude. 
+When loaded, an enum entry in the prelude will be added so that the user can address the audio as a constant. These will be addressed as Clips::enum_name and returns a WaviateAudio object.
+The editor will include a list view that can open to the side of the code editor on the right. This will let you add new file references or delete cached audio files.
+If you ever call loadAudio from within the shader, this UI will update and add a new audio clip reference. when an audio is cached, it will show up as 1 a URL (read only if gotten from the shader. otherwise it will be a open file button and becomes read only once a file is selected), 2 a textbox to name It
+if its not loaded from the shader but manually loaded via the open file button. If loaded from the shader this box won't even be visible. Next to that will be a trash bin icon to remove the loaded audio clip from the cache.
+finally there will be a button at the bottom to totally clear the cache of all audio clips, and right above that, a memory indicator that shows the total mbs currently loaded of audio.

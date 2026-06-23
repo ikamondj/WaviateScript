@@ -1,0 +1,13 @@
+Need to implement a pipeline so that if the user ever calls a function loadAudio(std::string or char* fileLocation),
+it will lazily load the first time the engine sees a call to that exact URL. once resolved, this will send to a consumer
+on a background thread and move on returning an pending WaviateAudio object. If pending or loading still, the function will essentially return an audio clip of length 1 sample and value 0 in that sample.
+once loaded, the WaviateAudio object will let users sample it in a few ways. clip.read(float x)
+this acts exactly like texture sampling but its 1d, and it has optional args. one enum arg which sets the sample end behavior. clamp to 01, wrap, or reflect (zigzag/triangle wave off it).
+another that lets the user choose nearest neighbor, linear interp (default), cubic, etc
+you can also do clip.readSample(sampleIndex) for direct lookups of exact samples.
+clip.length() is a function as well. Internally a WaviateAudio object is actually a wrapper style class. it should not hold a lot of data, but rather reference a position in a cache of loaded audios.
+When an audio is loaded, the url becomes the key to a hashmap or some fast structure. the value becomes all the internal data. the WaviateAudio object returned either has a nullptr in which case its interface
+acts as if it is length 1 with a single sample of 0 or it returns with a pointer to the cached audio data that URL is connected to. That way we can have loadAudio called per sample safely because its barely an allocation
+per shader call. 
+
+As part of this, implement the main pipeline to set this up. the classes and enums it needs to function, the placement of this as a function in the code and so on. Just don't do the file loading IO as part of this change yet.

@@ -73,3 +73,7 @@ Stack safety (where possible handle this with LLVM & compile time tools):
 - Estimate stack frame size from LLVM MachineFrameInfo/IR analysis where possible.
 - If estimated stack frame exceeds a limit, reject the script before JIT.
 - Large arrays or large struct allocs must use wav.newArray<T>(n) instead or wav.newArray<LargeStruct>(1).
+
+One additional note. If it's possible with LLVM have it instrument so that no global variables as in those defined outside of a function scope are allowed. (ONLY DO THIS IF IT'S EASY AND POSSIBLE WITH LLVM)
+The idea is a user should heavily use stack variables and my available data structures for heap. They can be allowed to get semi global behavior via static function scope allocations but they're still function scoped.
+Shaders should be mostly stateless but it's not a hard requirement as in the future I'll make mutable operations anyway.

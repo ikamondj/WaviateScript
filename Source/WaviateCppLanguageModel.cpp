@@ -65,6 +65,40 @@ const std::vector<FunctionSymbol>& waviateCoreMemberFunctions()
         function("sampleRateKHz", "float", {}, SymbolKind::Method, "Sample rate in kilohertz."),
         function("adsr", "float", { param("float", "attack"), param("float", "decay"), param("float", "sustain"), param("float", "release"), param("float", "t") }, SymbolKind::Method, "ADSR envelope."),
         function("ADSR", "float", { param("float", "attack"), param("float", "decay"), param("float", "sustain"), param("float", "release"), param("float", "t") }, SymbolKind::Method, "ADSR envelope."),
+        function("sine", "float", { param("float", "x") }, SymbolKind::Method, "Sine oscillator."),
+        function("saw", "float", { param("float", "x") }, SymbolKind::Method, "Saw oscillator."),
+        function("square", "float", { param("float", "x") }, SymbolKind::Method, "Square oscillator."),
+        function("pulse", "float", { param("float", "x"), param("float", "width", "0.5f") }, SymbolKind::Method, "Pulse oscillator."),
+        function("triangle", "float", { param("float", "x") }, SymbolKind::Method, "Triangle oscillator."),
+        function("semicircle", "float", { param("float", "x") }, SymbolKind::Method, "Semicircle oscillator."),
+        function("sawTan", "float", { param("float", "x") }, SymbolKind::Method, "Tangent-shaped saw oscillator."),
+        function("triangleTan", "float", { param("float", "x") }, SymbolKind::Method, "Tangent-shaped triangle oscillator."),
+        function("strongSine", "float", { param("float", "x") }, SymbolKind::Method, "Sine oscillator with harmonic weight."),
+        function("fractalSquare", "float", { param("float", "x") }, SymbolKind::Method, "Fractal square oscillator."),
+        function("perlin", "float", { param("float", "x"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Perlin noise."),
+        function("simplex", "float", { param("float", "x"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Simplex noise."),
+        function("voronoi", "float", { param("float", "x"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Voronoi noise."),
+        function("turbulence", "float", { param("float", "x"), param("int", "octaves", "4"), param("float", "lacunarity", "2.0f"), param("float", "gain", "0.5f"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Turbulence noise."),
+        function("ridgedMulti", "float", { param("float", "x"), param("int", "octaves", "4"), param("float", "lacunarity", "2.0f"), param("float", "gain", "0.5f"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Ridged multifractal noise."),
+    };
+
+    return symbols;
+}
+
+const std::vector<FunctionSymbol>& waviateAudioMemberFunctions()
+{
+    static const std::vector<FunctionSymbol> symbols {
+        function("isLoaded", "bool", {}, SymbolKind::Method, "Whether this audio clip is ready to read."),
+        function("length", "uint64_t", {}, SymbolKind::Method, "Length of the loaded audio clip in sample frames."),
+        function("channelCount", "int", {}, SymbolKind::Method, "Number of channels in the loaded audio clip."),
+        function("sampleRateHz", "float", {}, SymbolKind::Method, "Sample rate of the loaded audio clip in hertz."),
+        function("readSample", "float", { param("uint64_t", "sampleIndex"), param("int", "channel", "0") }, SymbolKind::Method, "Read a sample frame directly."),
+        function("read", "float", {
+            param("float", "x"),
+            param("WaviateAudioAddressMode", "addressMode", "WaviateAudioAddressMode::Clamp"),
+            param("WaviateAudioInterpolation", "interpolation", "WaviateAudioInterpolation::Linear"),
+            param("int", "channel", "0")
+        }, SymbolKind::Method, "Read the clip at a normalized position."),
     };
 
     return symbols;
@@ -783,6 +817,164 @@ inline float ridgedMulti(float x, int octaves = 4, float lacunarity = 2.0f, floa
 
 )waviate_cpp_api");
     api.append(R"waviate_cpp_api(
+enum class WaviateAudioAddressMode : uint32_t {
+    Clamp = 0,
+    Wrap = 1,
+    Reflect = 2
+};
+
+enum class WaviateAudioInterpolation : uint32_t {
+    Nearest = 0,
+    Linear = 1,
+    Cubic = 2
+};
+
+struct WaviateAudioRuntimeClip {
+    const float* samples;
+    uint64_t frameCount;
+    int32_t channelCount;
+    float sampleRate;
+};
+
+extern "C" const WaviateAudioRuntimeClip* waviate_load_audio_from_location(const char* location);
+
+class WaviateAudio {
+public:
+    WaviateAudio() = default;
+    explicit WaviateAudio(const WaviateAudioRuntimeClip* clipIn) : clip(clipIn) {}
+
+    bool isLoaded() const {
+        return clip != nullptr
+            && clip->samples != nullptr
+            && clip->frameCount > 0
+            && clip->channelCount > 0;
+    }
+
+    uint64_t length() const { return isLoaded() ? clip->frameCount : 1ULL; }
+    int channelCount() const { return isLoaded() ? clip->channelCount : 1; }
+    float sampleRateHz() const { return isLoaded() ? clip->sampleRate : 0.0f; }
+
+    float readSample(uint64_t sampleIndex, int channel = 0) const {
+        if (! isLoaded()
+            || channel < 0
+            || channel >= clip->channelCount
+            || sampleIndex >= clip->frameCount) {
+            return 0.0f;
+        }
+
+        const uint64_t offset = sampleIndex * static_cast<uint64_t>(clip->channelCount)
+            + static_cast<uint64_t>(channel);
+        return clip->samples[offset];
+    }
+
+    float read(float x,
+               WaviateAudioAddressMode addressMode = WaviateAudioAddressMode::Clamp,
+               WaviateAudioInterpolation interpolation = WaviateAudioInterpolation::Linear,
+               int channel = 0) const {
+        if (! isLoaded())
+            return 0.0f;
+
+        const float addressed = addressCoordinate(x, addressMode);
+        const float position = addressed * static_cast<float>(clip->frameCount > 1 ? clip->frameCount - 1 : 0);
+
+        if (interpolation == WaviateAudioInterpolation::Nearest)
+            return sampleAt(static_cast<long long>(position + 0.5f), channel, addressMode);
+
+        const long long baseIndex = static_cast<long long>(waviate_detail::wavFloor(position));
+        const float t = position - static_cast<float>(baseIndex);
+
+        if (interpolation == WaviateAudioInterpolation::Cubic)
+        {
+            const float p0 = sampleAt(baseIndex - 1, channel, addressMode);
+            const float p1 = sampleAt(baseIndex, channel, addressMode);
+            const float p2 = sampleAt(baseIndex + 1, channel, addressMode);
+            const float p3 = sampleAt(baseIndex + 2, channel, addressMode);
+            return cubic(p0, p1, p2, p3, t);
+        }
+
+        const float a = sampleAt(baseIndex, channel, addressMode);
+        const float b = sampleAt(baseIndex + 1, channel, addressMode);
+        return waviate_detail::lerp(a, b, t);
+    }
+
+private:
+    const WaviateAudioRuntimeClip* clip = nullptr;
+
+    static float addressCoordinate(float x, WaviateAudioAddressMode mode) {
+        if (mode == WaviateAudioAddressMode::Wrap)
+            return waviate_detail::fract(x);
+
+        if (mode == WaviateAudioAddressMode::Reflect)
+        {
+            const float period = x - waviate_detail::wavFloor(x * 0.5f) * 2.0f;
+            return period <= 1.0f ? period : 2.0f - period;
+        }
+
+        return waviate_detail::clamp01(x);
+    }
+
+    uint64_t addressIndex(long long index, WaviateAudioAddressMode mode) const {
+        if (clip->frameCount <= 1)
+            return 0ULL;
+
+        if (mode == WaviateAudioAddressMode::Wrap)
+        {
+            const long long lengthIn = static_cast<long long>(clip->frameCount);
+            long long wrapped = index % lengthIn;
+            if (wrapped < 0)
+                wrapped += lengthIn;
+            return static_cast<uint64_t>(wrapped);
+        }
+
+        if (mode == WaviateAudioAddressMode::Reflect)
+        {
+            const long long lengthIn = static_cast<long long>(clip->frameCount);
+            const long long period = lengthIn * 2 - 2;
+            long long reflected = index % period;
+            if (reflected < 0)
+                reflected += period;
+            if (reflected >= lengthIn)
+                reflected = period - reflected;
+            return static_cast<uint64_t>(reflected);
+        }
+
+        if (index <= 0)
+            return 0ULL;
+
+        const auto maxIndex = static_cast<long long>(clip->frameCount - 1);
+        return static_cast<uint64_t>(index >= maxIndex ? maxIndex : index);
+    }
+
+    float sampleAt(long long index, int channel, WaviateAudioAddressMode mode) const {
+        if (channel < 0 || channel >= clip->channelCount)
+            return 0.0f;
+
+        return readSample(addressIndex(index, mode), channel);
+    }
+
+    static float cubic(float p0, float p1, float p2, float p3, float t) {
+        const float t2 = t * t;
+        const float t3 = t2 * t;
+        return 0.5f * ((2.0f * p1)
+            + (-p0 + p2) * t
+            + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2
+            + (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+    }
+};
+
+inline WaviateAudio loadAudio(const char* fileLocation) {
+    return WaviateAudio(waviate_load_audio_from_location(fileLocation));
+}
+
+inline WaviateAudio loadAudio(char* fileLocation) {
+    return loadAudio(static_cast<const char*>(fileLocation));
+}
+
+template <typename StringLike>
+inline auto loadAudio(const StringLike& fileLocation) -> decltype(fileLocation.c_str(), WaviateAudio()) {
+    return loadAudio(fileLocation.c_str());
+}
+
 class WaviateCore {
 public:
     float getSeconds() const { return samplesToSeconds(coreSamplesSinceAppStart); }
@@ -814,6 +1006,27 @@ public:
     }
     float ADSR(float attack, float decay, float sustain, float release, float t) const {
         return adsr(attack, decay, sustain, release, t);
+    }
+
+    float sine(float x) const { return ::sine(x); }
+    float saw(float x) const { return ::saw(x); }
+    float square(float x) const { return ::square(x); }
+    float pulse(float x, float width = 0.5f) const { return ::pulse(x, width); }
+    float triangle(float x) const { return ::triangle(x); }
+    float semicircle(float x) const { return ::semicircle(x); }
+    float sawTan(float x) const { return ::sawTan(x); }
+    float triangleTan(float x) const { return ::triangleTan(x); }
+    float strongSine(float x) const { return ::strongSine(x); }
+    float fractalSquare(float x) const { return ::fractalSquare(x); }
+
+    float perlin(float x, float min = 0.0f, float max = 1.0f) const { return ::perlin(x, min, max); }
+    float simplex(float x, float min = 0.0f, float max = 1.0f) const { return ::simplex(x, min, max); }
+    float voronoi(float x, float min = 0.0f, float max = 1.0f) const { return ::voronoi(x, min, max); }
+    float turbulence(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f, float min = 0.0f, float max = 1.0f) const {
+        return ::turbulence(x, octaves, lacunarity, gain, min, max);
+    }
+    float ridgedMulti(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f, float min = 0.0f, float max = 1.0f) const {
+        return ::ridgedMulti(x, octaves, lacunarity, gain, min, max);
     }
 
 protected:

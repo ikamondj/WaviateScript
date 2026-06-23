@@ -2,6 +2,27 @@ cmake_minimum_required(VERSION 3.24)
 
 project(WaviateScript VERSION 1.0.0 LANGUAGES C CXX)
 
+# Workaround for new MSVC versions where CMake does not detect known features
+if(MSVC AND NOT CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_COMPILE_FEATURES
+        cxx_std_98
+        cxx_std_11
+        cxx_std_14
+        cxx_std_17
+        cxx_std_20
+        cxx_std_23
+    )
+endif()
+if(MSVC AND NOT CMAKE_C_COMPILE_FEATURES)
+    set(CMAKE_C_COMPILE_FEATURES
+        c_std_99
+        c_std_11
+    )
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 include(FetchContent)
 include(CTest)
 
@@ -152,10 +173,15 @@ set(WAVIATESCRIPT_CORE_SOURCES
     Source/WaviateShaderSerializer.cpp
     Source/WaviateShaderSerializer.h
     Source/WaviateInput.h
+    Source/WaviateAudio.cpp
+    Source/WaviateAudio.h
+    Source/WaviateFuelInstrumentation.cpp
+    Source/WaviateSafety.cpp
+    Source/WaviateSafetyValidator.cpp
 )
 
 add_library(WaviateScriptCore STATIC ${WAVIATESCRIPT_CORE_SOURCES})
-target_compile_features(WaviateScriptCore PUBLIC cxx_std_20)
+# target_compile_features(WaviateScriptCore PUBLIC cxx_std_20)
 target_include_directories(WaviateScriptCore
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/Source"
@@ -202,11 +228,12 @@ target_sources(WaviateScript
         Source/NewFileTemplateGenerator.h
         Source/PluginEditor.cpp
         Source/PluginEditor.h
+        Source/AudioClipsPanel.h
         Source/PluginProcessor.cpp
         Source/PluginProcessor.h
 )
 
-target_compile_features(WaviateScript PRIVATE cxx_std_20)
+# target_compile_features(WaviateScript PRIVATE cxx_std_20)
 
 target_compile_definitions(WaviateScript
     PUBLIC
@@ -310,7 +337,7 @@ if(WAVIATESCRIPT_BUILD_TESTS)
         Tests/Compile/CompilePipelineTests.cpp
         Tests/Serialization/ShaderSerializerTests.cpp
     )
-    target_compile_features(WaviateScriptTests PRIVATE cxx_std_20)
+    # target_compile_features(WaviateScriptTests PRIVATE cxx_std_20)
     target_include_directories(WaviateScriptTests
         PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/Tests"
@@ -351,7 +378,7 @@ if(WAVIATESCRIPT_PREMIUM)
     )
 
     add_library(WSPremium STATIC ${WAVIATESCRIPT_PREMIUM_SOURCES})
-    target_compile_features(WSPremium PUBLIC cxx_std_20)
+    # target_compile_features(WSPremium PUBLIC cxx_std_20)
     target_compile_definitions(WSPremium PUBLIC WAV_SCRIPT_PREMIUM=1 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_include_directories(WSPremium
         PUBLIC

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../Source/CompilePipeline.h"
+#include "../../Source/WaviateAudio.h"
 
 #include <juce_core/juce_core.h>
 
@@ -23,6 +24,7 @@ struct SampleInvocation
     float sampleRate = 48000.0f;
     juce::uint64 samplesSinceAppStart = 0;
     bool sustain = false;
+    waviate::audio::WaviateAudioCache* audioCache = nullptr;
     std::array<uint8_t, 128> midiNoteOn {};
     std::array<uint8_t, 128> midiCcValue {};
     std::vector<std::vector<float>> inputChannels;
@@ -45,6 +47,7 @@ struct CompileResult
     juce::String errorMessage;
     SampleShader sampleShader = nullptr;
     FrequencyShader frequencyShader = nullptr;
+    ShaderRuntimeControls runtime;
 
     [[nodiscard]] bool succeeded() const noexcept { return errorMessage.isEmpty(); }
     [[nodiscard]] bool hasEntryPoints() const noexcept { return sampleShader != nullptr || frequencyShader != nullptr; }

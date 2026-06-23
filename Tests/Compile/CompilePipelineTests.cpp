@@ -1,5 +1,6 @@
 #include "../TestSupport/WaviateUnitTest.h"
 #include "CompileTestHelpers.h"
+#include "WaviateSafety.h"
 
 #include <cmath>
 
@@ -200,5 +201,111 @@ float SampleProcess(const WaviateSample& wav)
         invocation.midiNoteOn[64] = 1;
         invocation.midiCcValue[7] = 99;
         WAVIATE_EXPECT(nearlyEqual(invokeSample(midiResult, invocation), 100.0f));
+    }
+}
+
+WAVIATE_TEST_CASE(CompilePipelineAudioLoadPipelineTest, "Compile Pipeline Audio Load Pipeline", "Compile")
+{
+    using namespace waviate::tests::compile;
+    using waviate::audio::WaviateAudioCache;
+    using waviate::audio::WaviateAudioLoadRequest;
+
+    WAVIATE_TEST("loadAudio returns a silent pending clip and queues the exact location once");
+    const auto pendingResult = compileSource("audio_load_pending", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto clip = loadAudio("memory://kick");
+    return static_cast<float>(clip.length()) + clip.read(0.5f) + clip.readSample(0);
+}
+)wlsl");
+    expectCompileSuccess(*this, pendingResult);
+    if (pendingResult)
+    {
+        WaviateAudioCache cache;
+        SampleInvocation invocation;
+        invocation.audioCache = &cache;
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(pendingResult, invocation), 1.0f));
+
+        WaviateAudioLoadRequest request;
+        WAVIATE_EXPECT(cache.popPendingRequest(request));
+        WAVIATE_EXPECT(request.location == "memory://kick");
+        WAVIATE_EXPECT(! cache.popPendingRequest(request));
+    }
+
+    WAVIATE_TEST("loadAudio reads cached audio after the runtime cache is populated");
+    const auto loadedResult = compileSource("audio_load_ready", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto clip = loadAudio("memory://kick");
+    return static_cast<float>(clip.length()) + clip.read(0.5f) + clip.readSample(0);
+}
+)wlsl");
+    expectCompileSuccess(*this, loadedResult);
+    if (loadedResult)
+    {
+        WaviateAudioCache cache;
+        SampleInvocation invocation;
+        invocation.audioCache = &cache;
+
+        static_cast<void>(invokeSample(loadedResult, invocation));
+
+        WaviateAudioLoadRequest request;
+        WAVIATE_EXPECT(cache.popPendingRequest(request));
+        WAVIATE_EXPECT(cache.storeLoadedAudio("memory://kick", { 0.0f, 1.0f, 0.0f }, 1, 48000.0f));
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(loadedResult, invocation), 4.0f));
+        WAVIATE_EXPECT(cache.pendingRequestCount() == 0);
+    }
+}
+
+WAVIATE_TEST_CASE(CompilePipelineFuelMeteringTest, "Compile Pipeline Fuel Metering", "Compile")
+{
+    using namespace waviate::tests::compile;
+
+    WAVIATE_TEST("normal shaders expose fuel runtime and run under a block budget");
+    const auto simpleResult = compileSource("fuel_simple", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    return wav.getIncomingSample() * 0.5f;
+}
+)wlsl");
+    expectCompileSuccess(*this, simpleResult);
+    if (simpleResult)
+    {
+        WAVIATE_EXPECT(simpleResult.runtime.hasFuelMetering());
+        simpleResult.runtime.beginBlock(waviate::compile::calculateFuelBudget(
+            waviate::compile::FuelLimitPreset::Minimal,
+            1,
+            1));
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(simpleResult, { .incomingSample = 0.75f }), 0.375f));
+        WAVIATE_EXPECT(! simpleResult.runtime.isFuelExhausted());
+    }
+
+    WAVIATE_TEST("large loops trip fuel metering and return fallback output");
+    const auto loopResult = compileSource("fuel_loop", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    float x = wav.getIncomingSample() * 0.1f;
+    for (int i = 0; i < 2000; ++i)
+    {
+        x = 3.9f * x * (1.0f - x);
+    }
+    return x;
+}
+)wlsl");
+    expectCompileSuccess(*this, loopResult);
+    if (loopResult)
+    {
+        WAVIATE_EXPECT(loopResult.runtime.hasFuelMetering());
+        loopResult.runtime.beginBlock(64);
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(loopResult, { .incomingSample = 0.25f }), 0.0f));
+        WAVIATE_EXPECT(loopResult.runtime.isFuelExhausted());
+        WAVIATE_EXPECT(loopResult.runtime.fuelRemaining() == 0);
+
+        // Reset fallback fuel state so it doesn't affect other things
+        waviate::safety::resetFallbackFuelState();
     }
 }

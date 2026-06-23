@@ -190,6 +190,27 @@ public:
         return adsr(attack, decay, sustain, release, t);
     }
 
+    float sine(float x) const { return ::sine(x); }
+    float saw(float x) const { return ::saw(x); }
+    float square(float x) const { return ::square(x); }
+    float pulse(float x, float width = 0.5f) const { return ::pulse(x, width); }
+    float triangle(float x) const { return ::triangle(x); }
+    float semicircle(float x) const { return ::semicircle(x); }
+    float sawTan(float x) const { return ::sawTan(x); }
+    float triangleTan(float x) const { return ::triangleTan(x); }
+    float strongSine(float x) const { return ::strongSine(x); }
+    float fractalSquare(float x) const { return ::fractalSquare(x); }
+
+    float perlin(float x, float min = 0.0f, float max = 1.0f) const { return ::perlin(x, min, max); }
+    float simplex(float x, float min = 0.0f, float max = 1.0f) const { return ::simplex(x, min, max); }
+    float voronoi(float x, float min = 0.0f, float max = 1.0f) const { return ::voronoi(x, min, max); }
+    float turbulence(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f, float min = 0.0f, float max = 1.0f) const {
+        return ::turbulence(x, octaves, lacunarity, gain, min, max);
+    }
+    float ridgedMulti(float x, int octaves = 4, float lacunarity = 2.0f, float gain = 0.5f, float min = 0.0f, float max = 1.0f) const {
+        return ::ridgedMulti(x, octaves, lacunarity, gain, min, max);
+    }
+
 protected:
     WaviateCore(float sampleRateIn, uint64_t samplesSinceAppStartIn)
         : coreSampleRate(sampleRateIn), coreSamplesSinceAppStart(samplesSinceAppStartIn) {}

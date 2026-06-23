@@ -50,6 +50,7 @@ struct FieldSymbol
 };
 
 const std::vector<FunctionSymbol>& waviateCoreMemberFunctions();
+const std::vector<FunctionSymbol>& waviateAudioMemberFunctions();
 const std::vector<FunctionSymbol>& waviateSampleMemberFunctions();
 const std::vector<FunctionSymbol>& waviateFrequencyMemberFunctions();
 const std::vector<FunctionSymbol>& waviateGlobalFunctions();

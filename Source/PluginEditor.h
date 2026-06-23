@@ -15,6 +15,7 @@
 #include "AppTheme.h"
 #include "CodeEditor.h"
 #include "CppFileTemplateGenerator.h"
+#include "AudioClipsPanel.h"
 
 //==============================================================================
 /**
@@ -23,7 +24,8 @@
  * full keyboard support (Ctrl+S for Save, Ctrl+Shift+S for Save As).
  */
 class WaviateScriptAudioProcessorEditor : public juce::AudioProcessorEditor,
-                                         private juce::KeyListener
+                                         private juce::KeyListener,
+                                         private juce::Timer
 {
 public:
     explicit WaviateScriptAudioProcessorEditor(WaviateScriptAudioProcessor&);
@@ -75,6 +77,7 @@ private:
     void applyTheme(const WaviateTheme& theme, bool persistSelection);
     void selectTheme(const juce::String& themeId, bool persistSelection);
     void setCompletionsEnabled(bool shouldBeEnabled, bool persistSelection);
+    void setFuelLimitPreset(waviate::compile::FuelLimitPreset preset, bool persistSelection);
     static juce::PropertiesFile::Options createSettingsOptions();
 
     WaviateScriptAudioProcessor& audioProcessor;
@@ -107,6 +110,9 @@ private:
     juce::String currentThemeId = WaviateThemes::fallback().id;
     std::unique_ptr<juce::PropertiesFile> userSettings;
 
+    bool isAudioClipsPanelOpen = false;
+    AudioClipsPanel audioClipsPanel;
+
     // ===== Layout Constants =====
     static constexpr int toolbarHeight = 32;
     static constexpr int buttonWidth = 60;
@@ -114,6 +120,8 @@ private:
     static constexpr int padding = 6;
 
     CppFileTemplateGenerator cppTemplateGen;
+
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaviateScriptAudioProcessorEditor)
 };

@@ -11,6 +11,10 @@
 
 #include "AbstractCompiler.h"
 #include "WaviateCppLanguageModel.h"
+#include "WaviateAudio.h"
+#include "WaviateSafety.h"
+#include "WaviateSafetyValidator.h"
+#include "WaviateFuelInstrumentation.h"
 
 #include <clang/Basic/DiagnosticIDs.h>
 #include <clang/Basic/DiagnosticOptions.h>
@@ -39,6 +43,14 @@ public:
 
     void compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) override;
 
+    [[nodiscard]] ShaderRuntimeControls getRuntimeControls() const noexcept override {
+        ShaderRuntimeControls controls;
+        controls.setFuelBudget = &waviate::safety::setFuelBudget;
+        controls.getFuelRemaining = &waviate::safety::getFuelRemaining;
+        controls.getFuelExhausted = &waviate::safety::getFuelExhausted;
+        return controls;
+    }
+
     const void* getDispatchPtr() const noexcept {
         return dispatch_.load(std::memory_order_acquire);
     }
@@ -62,6 +74,7 @@ private:
     std::atomic<const Dispatch*> dispatch_{ nullptr };
 
     static bool isIdentifierChar(char c) noexcept;
+    static std::string validateSourceCapabilities(const std::string& userSource);
     static std::string stripCommentsAndStrings(const std::string& source);
     static bool containsFunctionLikeIdentifier(const std::string& source, const char* name);
     static std::string buildEmbeddedCppApi();
@@ -83,11 +96,120 @@ ClangCompiler<cppMode>::ClangCompiler() {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
+    waviate::safety::registerRuntimeSymbols();
 }
 
 template <bool cppMode>
 bool ClangCompiler<cppMode>::isIdentifierChar(char c) noexcept {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+}
+
+template <bool cppMode>
+static std::string trimShaderLineForValidation(std::string line) {
+    while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r' || line.back() == '\n'))
+        line.pop_back();
+
+    size_t first = 0;
+    while (first < line.size() && (line[first] == ' ' || line[first] == '\t'))
+        ++first;
+
+    return line.substr(first);
+}
+
+template <bool cppMode>
+std::string ClangCompiler<cppMode>::validateSourceCapabilities(const std::string& userSource) {
+    const auto stripped = stripCommentsAndStrings(userSource);
+    std::ostringstream diagnostics;
+
+    auto reject = [&diagnostics](const std::string& message) {
+        diagnostics << "- " << message << '\n';
+    };
+
+    std::istringstream lines(stripped);
+    std::string line;
+    int lineNumber = 1;
+
+    while (std::getline(lines, line)) {
+        const auto trimmed = trimShaderLineForValidation<cppMode>(line);
+
+        if (!trimmed.empty() && trimmed.front() == '#') {
+            size_t cursor = 1;
+            while (cursor < trimmed.size() && std::isspace(static_cast<unsigned char>(trimmed[cursor])) != 0)
+                ++cursor;
+
+            const auto directiveStart = cursor;
+            while (cursor < trimmed.size() && isIdentifierChar(trimmed[cursor]))
+                ++cursor;
+
+            const auto directive = trimmed.substr(directiveStart, cursor - directiveStart);
+            reject("preprocessor directive '#" + directive + "' on line " + std::to_string(lineNumber)
+                + " is not allowed in Waviate shader code");
+        }
+
+        ++lineNumber;
+    }
+
+    static constexpr const char* forbiddenIdentifiers[] = {
+        "asm", "__asm", "__asm__", "reinterpret_cast", "const_cast", "dynamic_cast", "typeid",
+        "try", "throw", "catch",
+        "new", "delete", "malloc", "calloc", "realloc", "free", "alloca", "_alloca", "_malloca",
+        "system", "popen", "_popen",
+        "CreateProcess", "CreateProcessA", "CreateProcessW", "ShellExecute", "ShellExecuteA", "ShellExecuteW",
+        "WinExec", "LoadLibrary", "LoadLibraryA", "LoadLibraryW", "LoadLibraryExA", "LoadLibraryExW",
+        "GetProcAddress", "FreeLibrary",
+        "dlopen", "dlsym", "dlclose",
+        "fork", "vfork", "execl", "execle", "execlp", "execv", "execve", "execvp", "execvpe",
+        "spawn", "socket", "connect", "bind", "listen", "accept", "send", "recv",
+        "fopen", "freopen", "remove", "rename", "ifstream", "ofstream", "fstream",
+        "thread", "mutex", "atomic", "_Atomic", "__atomic", "__c11_atomic", "_Interlocked", "volatile",
+        "__has_include", "__has_include_next",
+        "waviate_consume_fuel", "waviate_fuel_trap",
+        "__waviate_internal_arena_allocate", "__waviate_internal_arena_generation"
+    };
+
+    size_t cursor = 0;
+    while (cursor < stripped.size()) {
+        if (!isIdentifierChar(stripped[cursor])) {
+            ++cursor;
+            continue;
+        }
+
+        const auto start = cursor;
+        while (cursor < stripped.size() && isIdentifierChar(stripped[cursor]))
+            ++cursor;
+
+        const auto identifier = stripped.substr(start, cursor - start);
+
+        if (identifier.rfind("__builtin_", 0) == 0) {
+            reject("compiler builtin '" + identifier + "' is not allowed in user shader code");
+            continue;
+        }
+
+        for (const auto* forbidden : forbiddenIdentifiers) {
+            if (identifier == forbidden) {
+                reject("identifier '" + identifier + "' is not allowed in user shader code");
+                break;
+            }
+        }
+
+        if constexpr (cppMode) {
+            static constexpr const char* forbiddenCppAbiIdentifiers[] = {
+                "sample_process", "frequency_process",
+                "WaviateSampleInput", "WaviateFrequencyInput",
+                "WaviateSampleStateWriter", "WaviateFrequencyStateWriter"
+            };
+
+            for (const auto* forbidden : forbiddenCppAbiIdentifiers) {
+                if (identifier == forbidden) {
+                    reject("raw ABI identifier '" + identifier
+                        + "' is internal; use SampleProcess(WaviateSample&) or FrequencyProcess(WaviateFrequency&)");
+                    break;
+                }
+            }
+        }
+    }
+
+    return diagnostics.str();
 }
 
 template <bool cppMode>
@@ -236,6 +358,21 @@ extern "C" WaviateComplex frequency_process(const WaviateFrequencyInput* input, 
     return shim;
 }
 
+inline std::string sanitizeIdentifier(std::string_view name)
+{
+    std::string result;
+    for (char c : name)
+    {
+        if (std::isalnum(static_cast<unsigned char>(c)))
+            result.push_back(c);
+        else
+            result.push_back('_');
+    }
+    if (result.empty() || std::isdigit(static_cast<unsigned char>(result[0])))
+        result.insert(result.begin(), '_');
+    return result;
+}
+
 template <bool cppMode>
 std::string ClangCompiler<cppMode>::buildTranslationUnit(const std::string& userSource) {
     std::string tu;
@@ -244,6 +381,30 @@ std::string ClangCompiler<cppMode>::buildTranslationUnit(const std::string& user
     if constexpr (cppMode) {
         tu.append("#line 1 \"WaviateSdk.hpp\"\n");
         tu.append(buildEmbeddedCppApi());
+
+        if (auto* cache = waviate::audio::getCurrentThreadAudioCache())
+        {
+            std::string clipsPrelude = "\nnamespace Clips {\n";
+            for (const auto& entry : cache->snapshot())
+            {
+                if (entry.isManual && ! entry.customName.empty())
+                {
+                    std::string ident = sanitizeIdentifier(entry.customName);
+                    clipsPrelude += "    inline const WaviateAudio " + ident + " = loadAudio(\"";
+                    for (char c : entry.location)
+                    {
+                        if (c == '\\')
+                            clipsPrelude += "/";
+                        else
+                            clipsPrelude += c;
+                    }
+                    clipsPrelude += "\");\n";
+                }
+            }
+            clipsPrelude += "} // namespace Clips\n";
+            tu.append(clipsPrelude);
+        }
+
         tu.append("\n#line 1 \"shader.wlsl\"\n");
         tu.append(userSource);
         tu.append("\n\n#line 1 \"WaviateCppAbiShim.hpp\"\n");
@@ -340,15 +501,66 @@ std::unique_ptr<llvm::Module> ClangCompiler<cppMode>::emitLLVMModule(
 
 template <bool cppMode>
 std::unique_ptr<llvm::ExecutionEngine> ClangCompiler<cppMode>::buildJIT(std::unique_ptr<llvm::Module> m) {
+    std::printf("[DEBUG] buildJIT start, module=%p\n", (void*)m.get());
+    std::fflush(stdout);
     if (!m) return nullptr;
 
+    for (auto& f : m->functions()) {
+        std::printf("[DEBUG] JIT Function in Module: %s\n", f.getName().str().c_str());
+        std::fflush(stdout);
+    }
+
+    llvm::Function* loadAudioFunc = m->getFunction("waviate_load_audio_from_location");
+    llvm::Function* consumeFuelFunc = m->getFunction("waviate_consume_fuel");
+    llvm::Function* fuelTrapFunc = m->getFunction("waviate_fuel_trap");
+    llvm::Function* arenaAllocFunc = m->getFunction("__waviate_internal_arena_allocate");
+    llvm::Function* arenaGenFunc = m->getFunction("__waviate_internal_arena_generation");
+
+    std::printf("[DEBUG] buildJIT: calling registerRuntimeSymbols\n");
+    std::fflush(stdout);
+    waviate::safety::registerRuntimeSymbols();
+    std::printf("[DEBUG] buildJIT: registerRuntimeSymbols finished\n");
+    std::fflush(stdout);
+
+    std::printf("[DEBUG] buildJIT: creating EngineBuilder\n");
+    std::fflush(stdout);
     std::string err;
     llvm::ExecutionEngine* raw = llvm::EngineBuilder(std::move(m))
         .setEngineKind(llvm::EngineKind::JIT)
         .setErrorStr(&err)
         .create();
 
+    std::printf("[DEBUG] buildJIT: EngineBuilder finished, raw=%p, err=%s\n", (void*)raw, err.c_str());
+    std::fflush(stdout);
     if (!raw) return nullptr;
+
+    if (loadAudioFunc) {
+        std::printf("[DEBUG] buildJIT: mapping waviate_load_audio_from_location, func=%p\n", (void*)loadAudioFunc);
+        std::fflush(stdout);
+        raw->addGlobalMapping(loadAudioFunc, reinterpret_cast<void*>(&waviate::audio::waviate_load_audio_from_location));
+    }
+    if (consumeFuelFunc) {
+        std::printf("[DEBUG] buildJIT: mapping waviate_consume_fuel, func=%p\n", (void*)consumeFuelFunc);
+        std::fflush(stdout);
+        raw->addGlobalMapping(consumeFuelFunc, reinterpret_cast<void*>(&waviate_consume_fuel));
+    }
+    if (fuelTrapFunc) {
+        std::printf("[DEBUG] buildJIT: mapping waviate_fuel_trap, func=%p\n", (void*)fuelTrapFunc);
+        std::fflush(stdout);
+        raw->addGlobalMapping(fuelTrapFunc, reinterpret_cast<void*>(&waviate_fuel_trap));
+    }
+    if (arenaAllocFunc) {
+        std::printf("[DEBUG] buildJIT: mapping __waviate_internal_arena_allocate, func=%p\n", (void*)arenaAllocFunc);
+        std::fflush(stdout);
+        raw->addGlobalMapping(arenaAllocFunc, reinterpret_cast<void*>(&__waviate_internal_arena_allocate));
+    }
+    if (arenaGenFunc) {
+        std::printf("[DEBUG] buildJIT: mapping __waviate_internal_arena_generation, func=%p\n", (void*)arenaGenFunc);
+        std::fflush(stdout);
+        raw->addGlobalMapping(arenaGenFunc, reinterpret_cast<void*>(&__waviate_internal_arena_generation));
+    }
+    std::printf("[DEBUG] buildJIT: mapping finished\n");
+    std::fflush(stdout);
 
     return std::unique_ptr<llvm::ExecutionEngine>(raw);
 }
@@ -365,13 +577,23 @@ void ClangCompiler<cppMode>::retireOldActive() {
 
 template <bool cppMode>
 void ClangCompiler<cppMode>::compileSource(std::string source, SampleShader& outSample, FrequencyShader& outFrequency) {
+    std::printf("[DEBUG] ClangCompiler::compileSource start\n");
+    std::fflush(stdout);
     outSample = nullptr;
     outFrequency = nullptr;
 
     dispatch_.store(nullptr, std::memory_order_release);
 
     const char* virtualFilename = cppMode ? "shader.cpp" : "shader.c";
+
+    if (const auto sourceDiagnostics = validateSourceCapabilities(source); !sourceDiagnostics.empty())
+        throw std::runtime_error("Unsafe shader source rejected:\n" + sourceDiagnostics);
+
+    std::printf("[DEBUG] ClangCompiler::compileSource: source validated\n");
+    std::fflush(stdout);
     const std::string tu = buildTranslationUnit(source);
+    std::printf("[DEBUG] ClangCompiler::compileSource: translation unit built\n");
+    std::fflush(stdout);
 
     auto unit = std::make_unique<CompiledUnit>();
     unit->ctx = std::make_unique<llvm::LLVMContext>();
@@ -380,7 +602,11 @@ void ClangCompiler<cppMode>::compileSource(std::string source, SampleShader& out
     if (!buffer) return;
 
     std::string diagnostics;
+    std::printf("[DEBUG] ClangCompiler::compileSource: calling emitLLVMModule\n");
+    std::fflush(stdout);
     auto module = emitLLVMModule(*unit->ctx, std::move(buffer), diagnostics);
+    std::printf("[DEBUG] ClangCompiler::compileSource: emitLLVMModule finished\n");
+    std::fflush(stdout);
     if (!module) {
         if (!diagnostics.empty())
             throw std::runtime_error(diagnostics);
@@ -388,14 +614,42 @@ void ClangCompiler<cppMode>::compileSource(std::string source, SampleShader& out
         throw std::runtime_error("Clang did not emit an LLVM module");
     }
 
+    std::printf("[DEBUG] ClangCompiler::compileSource: calling validateModuleSafety pre-instrumentation\n");
+    std::fflush(stdout);
+    if (const auto validation = waviate::safety::validateModuleSafety(*module); !validation)
+        throw std::runtime_error("Unsafe shader rejected before instrumentation:\n" + validation.diagnostics);
+
+    std::printf("[DEBUG] ClangCompiler::compileSource: calling instrumentModuleWithFuel\n");
+    std::fflush(stdout);
+    waviate::safety::instrumentModuleWithFuel(*module);
+    std::printf("[DEBUG] ClangCompiler::compileSource: instrumentModuleWithFuel finished\n");
+    std::fflush(stdout);
+
+    std::printf("[DEBUG] ClangCompiler::compileSource: calling validateModuleSafety post-instrumentation\n");
+    std::fflush(stdout);
+    if (const auto validation = waviate::safety::validateModuleSafety(*module); !validation)
+        throw std::runtime_error("Unsafe shader rejected after instrumentation:\n" + validation.diagnostics);
+
+    std::printf("[DEBUG] ClangCompiler::compileSource: calling buildJIT\n");
+    std::fflush(stdout);
     unit->ee = buildJIT(std::move(module));
+    std::printf("[DEBUG] ClangCompiler::compileSource: buildJIT finished, ee=%p\n", (void*)unit->ee.get());
+    std::fflush(stdout);
     if (!unit->ee)
         throw std::runtime_error("Failed to create the JIT execution engine");
 
+    std::printf("[DEBUG] ClangCompiler::compileSource: calling finalizeObject\n");
+    std::fflush(stdout);
     unit->ee->finalizeObject();
+    std::printf("[DEBUG] ClangCompiler::compileSource: finalizeObject finished\n");
+    std::fflush(stdout);
 
     const uint64_t sampleAddr = unit->ee->getFunctionAddress("sample_process");
+    std::printf("[DEBUG] ClangCompiler::compileSource: sample_process address found: %llu\n", (unsigned long long)sampleAddr);
+    std::fflush(stdout);
     const uint64_t freqAddr = unit->ee->getFunctionAddress("frequency_process");
+    std::printf("[DEBUG] ClangCompiler::compileSource: frequency_process address found: %llu\n", (unsigned long long)freqAddr);
+    std::fflush(stdout);
 
     unit->dispatch.sample = sampleAddr ? reinterpret_cast<SampleShader>(sampleAddr) : nullptr;
     unit->dispatch.freq = freqAddr ? reinterpret_cast<FrequencyShader>(freqAddr) : nullptr;

@@ -9,6 +9,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <array>
+
 namespace
 {
     constexpr const char* waviateShaderExtension = ".wlsl";
@@ -16,13 +18,24 @@ namespace
     constexpr const char* lastOpenedFileSettingKey = "lastOpenedFile";
     constexpr const char* recentFilesSettingKey = "recentFiles";
     constexpr const char* codeCompletionsSettingKey = "codeCompletionsEnabled";
+    constexpr const char* fuelLimitPresetSettingKey = "fuelLimitPreset";
     constexpr int recentFileItemBase = 2000;
+    constexpr int fuelLimitItemBase = 3000;
     constexpr int maxRecentFileCount = 10;
+
+    constexpr std::array<waviate::compile::FuelLimitPreset, 5> fuelLimitMenuPresets {
+        waviate::compile::FuelLimitPreset::Minimal,
+        waviate::compile::FuelLimitPreset::Low,
+        waviate::compile::FuelLimitPreset::Medium,
+        waviate::compile::FuelLimitPreset::High,
+        waviate::compile::FuelLimitPreset::Massive
+    };
 }
 
 //==============================================================================
 WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScriptAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p)
+    : AudioProcessorEditor(&p), audioProcessor(p),
+      audioClipsPanel(p, [this] { codeEditor.compileCurrentSource(); })
 {
     setSize(900, 700);
     
@@ -102,9 +115,22 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     showEmptyState();
 
     userSettings = std::make_unique<juce::PropertiesFile>(createSettingsOptions());
+    setFuelLimitPreset(
+        waviate::compile::fuelLimitPresetFromId(
+            userSettings->getValue(
+                fuelLimitPresetSettingKey,
+                juce::String(waviate::compile::fuelLimitPresetId(waviate::compile::FuelLimitPreset::Medium).data())).toStdString()),
+        false);
     setCompletionsEnabled(userSettings->getBoolValue(codeCompletionsSettingKey, true), false);
     selectTheme(userSettings->getValue("theme", WaviateThemes::fallback().id), false);
     loadLastOpenedFileIfAvailable();
+    
+    addChildComponent(audioClipsPanel);
+    audioProcessor.onAudioCacheChanged = [this]() {
+        audioClipsPanel.updateList();
+    };
+    startTimer(100);
+
     resized();
 }
 
@@ -150,6 +176,17 @@ void WaviateScriptAudioProcessorEditor::resized()
         toolbarBounds.removeFromLeft(padding * 2);
 
         currentFileLabel.setBounds(toolbarBounds);
+    }
+
+    if (isAudioClipsPanelOpen)
+    {
+        auto clipsArea = area.removeFromRight(250);
+        audioClipsPanel.setBounds(clipsArea);
+        audioClipsPanel.setVisible(true);
+    }
+    else
+    {
+        audioClipsPanel.setVisible(false);
     }
 
     codeEditor.setBounds(area);
@@ -255,16 +292,27 @@ void WaviateScriptAudioProcessorEditor::showViewMenu()
 
     juce::PopupMenu viewMenu;
     viewMenu.addSubMenu("Theme", themeMenu);
+    viewMenu.addItem(1, "Show Audio Clips", true, isAudioClipsPanelOpen);
 
     viewMenu.showMenuAsync(juce::PopupMenu::Options()
         .withTargetComponent(&viewMenuButton),
         [this](int result) {
-            constexpr int themeItemBase = 1000;
-            const auto themeIndex = result - themeItemBase;
-            const auto& themes = WaviateThemes::all();
+            if (result == 1)
+            {
+                isAudioClipsPanelOpen = ! isAudioClipsPanelOpen;
+                if (isAudioClipsPanelOpen)
+                    audioClipsPanel.updateList();
+                resized();
+            }
+            else
+            {
+                constexpr int themeItemBase = 1000;
+                const auto themeIndex = result - themeItemBase;
+                const auto& themes = WaviateThemes::all();
 
-            if (themeIndex >= 0 && themeIndex < static_cast<int>(themes.size()))
-                selectTheme(themes[static_cast<size_t>(themeIndex)].id, true);
+                if (themeIndex >= 0 && themeIndex < static_cast<int>(themes.size()))
+                    selectTheme(themes[static_cast<size_t>(themeIndex)].id, true);
+            }
         });
 }
 
@@ -273,13 +321,34 @@ void WaviateScriptAudioProcessorEditor::showToolsMenu()
     constexpr int completionsItemId = 1;
 
     juce::PopupMenu toolsMenu;
+    juce::PopupMenu fuelLimitMenu;
+
+    const auto activeFuelLimit = audioProcessor.getFuelLimitPreset();
+    for (int i = 0; i < static_cast<int>(fuelLimitMenuPresets.size()); ++i)
+    {
+        const auto preset = fuelLimitMenuPresets[static_cast<size_t>(i)];
+        fuelLimitMenu.addItem(
+            fuelLimitItemBase + i,
+            juce::String(waviate::compile::fuelLimitPresetDisplayName(preset).data()),
+            true,
+            activeFuelLimit == preset);
+    }
+
     toolsMenu.addItem(completionsItemId, "Completions", true, codeEditor.areCompletionsEnabled());
+    toolsMenu.addSubMenu("Fuel Limits", fuelLimitMenu);
 
     toolsMenu.showMenuAsync(juce::PopupMenu::Options()
         .withTargetComponent(&toolsMenuButton),
         [this](int result) {
             if (result == completionsItemId)
+            {
                 setCompletionsEnabled(! codeEditor.areCompletionsEnabled(), true);
+                return;
+            }
+
+            const auto fuelLimitIndex = result - fuelLimitItemBase;
+            if (fuelLimitIndex >= 0 && fuelLimitIndex < static_cast<int>(fuelLimitMenuPresets.size()))
+                setFuelLimitPreset(fuelLimitMenuPresets[static_cast<size_t>(fuelLimitIndex)], true);
         });
 }
 
@@ -720,6 +789,27 @@ void WaviateScriptAudioProcessorEditor::setCompletionsEnabled(bool shouldBeEnabl
     }
 }
 
+void WaviateScriptAudioProcessorEditor::setFuelLimitPreset(waviate::compile::FuelLimitPreset preset, bool persistSelection)
+{
+    audioProcessor.setFuelLimitPreset(preset);
+
+    if (persistSelection && userSettings != nullptr)
+    {
+        userSettings->setValue(
+            fuelLimitPresetSettingKey,
+            juce::String(waviate::compile::fuelLimitPresetId(preset).data()));
+        userSettings->saveIfNeeded();
+    }
+
+    if (persistSelection)
+    {
+        if (codeEditor.isVisible())
+            codeEditor.compileCurrentSource();
+        else if (currentScriptFile.existsAsFile())
+            audioProcessor.loadProgram(currentScriptFile);
+    }
+}
+
 juce::PropertiesFile::Options WaviateScriptAudioProcessorEditor::createSettingsOptions()
 {
     juce::PropertiesFile::Options options;
@@ -739,4 +829,12 @@ juce::File WaviateScriptAudioProcessorEditor::getDefaultSaveDirectory() const
         return currentScriptFile.getParentDirectory().getFullPathName();
     }
     return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+}
+
+void WaviateScriptAudioProcessorEditor::timerCallback()
+{
+    if (isAudioClipsPanelOpen)
+    {
+        audioClipsPanel.updateList();
+    }
 }

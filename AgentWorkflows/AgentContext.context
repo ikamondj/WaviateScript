@@ -7,5 +7,10 @@ Some things the project should support down the road.
 -A code editor with language highlighting, and autocomplete features.
 -Webassembly support. When user code compiles it actually compiles the entire audio engine main loop into webassembly so the data doesn't need to transfer each audio sample, just once at the beginning of the block. 
 -Webassembly sandboxing: code compiled when targetting webassembly truly only supports user logic, no access to OS resources. essentially looking to guarantee shaders can be distributed
--If webassembly is working, we'll eventually be adding a backend where users can share shaders
+-If webassembly is working, we'll eventually be adding a backend where users can share shaders they've created with the webassembly sandbox.
+-the app is setup so the standalone will be available to all users for free. this supports common musical features (midi support, time context, all audio helper functions). 
+-for subscribing users, they'll get vst3 support, and a lot of extra features (HID input reading, OSC networking controls, and some other ideas later)
+-The architecture is this. The juce audio loop processes whatever user shaders are currently loaded. the front end sends compiled results to the audio thread atomically for safe use when compiled successfully.
+-The app starts listeners for HID devices/OSC connections and other common listeners for premium and maybe some regular inputs. these atomically or lock free send to the audio thread as well
+-the midi processing happens right on the audio thread through juce's system.
 -
