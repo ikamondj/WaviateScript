@@ -29,6 +29,7 @@ var (
 	ErrAuthUnavailable  = errors.New("authentication provider is not configured")
 	ErrInvalidAuthState = errors.New("invalid OAuth state")
 	ErrUnauthenticated  = errors.New("authentication required")
+	ErrForbidden        = errors.New("account does not have permission for this endpoint")
 )
 
 type Provider struct {
@@ -71,6 +72,12 @@ type CallbackResult struct {
 
 type Middleware struct {
 	verifier SessionVerifier
+}
+
+type Requirement struct {
+	Required        bool
+	RequiredPlan    string
+	CreatorRequired bool
 }
 
 type SessionVerifier interface {
@@ -263,6 +270,14 @@ func HashToken(rawToken string) string {
 }
 
 func (middleware Middleware) RequireUser(next http.Handler) http.Handler {
+	return middleware.Apply(Requirement{Required: true}, next)
+}
+
+func (middleware Middleware) Apply(requirement Requirement, next http.Handler) http.Handler {
+	if !requirement.Required && requirement.RequiredPlan == "" && !requirement.CreatorRequired {
+		return next
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if middleware.verifier == nil {
 			http.Error(w, ErrUnauthenticated.Error(), http.StatusUnauthorized)
@@ -278,6 +293,15 @@ func (middleware Middleware) RequireUser(next http.Handler) http.Handler {
 		user, err := middleware.verifier.VerifyBearerToken(r.Context(), token)
 		if err != nil {
 			http.Error(w, ErrUnauthenticated.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		if requirement.CreatorRequired && !user.Creator {
+			http.Error(w, ErrForbidden.Error(), http.StatusForbidden)
+			return
+		}
+		if requirement.RequiredPlan != "" && !userHasRequiredPlan(user, requirement.RequiredPlan) {
+			http.Error(w, ErrForbidden.Error(), http.StatusForbidden)
 			return
 		}
 
@@ -460,6 +484,17 @@ func readBearerToken(header string) (string, bool) {
 	}
 
 	return strings.TrimSpace(token), true
+}
+
+func userHasRequiredPlan(user domain.AuthenticatedUser, requiredPlan string) bool {
+	if user.Plan != requiredPlan {
+		return false
+	}
+	if requiredPlan == domain.PlanPremium {
+		return user.SubscriptionActive
+	}
+
+	return true
 }
 
 func mustRandomToken(byteCount int) string {

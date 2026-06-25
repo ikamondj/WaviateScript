@@ -5,12 +5,13 @@ Go scaffold for the WaviateScript marketplace API.
 ## Layout
 
 ```text
-cmd/server        Local HTTP server mode.
-cmd/serverless    Serverless handler scaffold.
-internal/auth     OAuth provider and middleware placeholders.
+cmd/server        Traditional long-running HTTP server.
+cmd/serverless    Endpoint-scoped Lambda bootstrap selected by MARKETPLACE_ENDPOINT_NAME.
+internal/auth     OAuth/session provider and reusable auth middleware.
 internal/controller/http
 internal/desktop  Desktop app handoff URI helpers.
 internal/domain   Core request and response models.
+internal/endpoints Explicit route/auth/deployment metadata registry.
 internal/persistence
 internal/service   Business logic shared by server and serverless modes.
 internal/validation
@@ -21,16 +22,22 @@ native             C ABI shim/build files for optional Waviate compiler validati
 
 ```powershell
 go run ./cmd/server
-go run ./cmd/serverless
+$env:MARKETPLACE_ENDPOINT_NAME="health"; go run ./cmd/serverless
 go test ./...
 ```
+
+`cmd/serverless` is not a catch-all router. It mounts exactly one endpoint from
+`internal/endpoints` based on `MARKETPLACE_ENDPOINT_NAME`. Terraform deploys one
+logical Lambda function per endpoint while reusing the same bootstrap artifact.
 
 Native compiler validation is optional by default. See `native/README.md` for
 building the Waviate desktop compiler shim and running with `-tags nativecompiler`.
 
 ## Notes
 
-- The local server starts with an in-memory store.
+- `MARKETPLACE_MODE=server` and `MARKETPLACE_MODE=serverless` use Postgres as
+  the source of truth. Other modes use the in-memory store for quick tests/dev.
 - `internal/persistence/postgres` contains the first concrete SQL-backed store for the normalized marketplace schema.
-- TODO comments mark real DB wiring, OAuth callback handling, upload package validation, and desktop install semantics.
-- Server and serverless entry points both build the same handler through `internal/server`.
+- Server and serverless entry points share service, persistence, auth, and
+  endpoint handler code through `internal/server`.
+- Terraform modules live under `../infra/server` and `../infra/serverless`.

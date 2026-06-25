@@ -1,0 +1,90 @@
+[
+  {
+    "name": "health",
+    "method": "GET",
+    "path": "/healthz",
+    "auth": { "required": false },
+    "cloudFunctionName": "health",
+    "serverless": true
+  },
+  {
+    "name": "search",
+    "method": "GET",
+    "path": "/api/search",
+    "auth": { "required": false },
+    "cloudFunctionName": "search",
+    "serverless": true
+  },
+  {
+    "name": "tags",
+    "method": "GET",
+    "path": "/api/tags",
+    "auth": { "required": false },
+    "cloudFunctionName": "tags",
+    "serverless": true
+  },
+  {
+    "name": "compile-check",
+    "method": "POST",
+    "path": "/api/source/compile-check",
+    "auth": { "required": false },
+    "cloudFunctionName": "compile-check",
+    "serverless": true
+  },
+  {
+    "name": "upload",
+    "method": "POST",
+    "path": "/api/uploads",
+    "auth": { "required": true },
+    "cloudFunctionName": "upload",
+    "serverless": true
+  },
+  {
+    "name": "source-code",
+    "method": "GET",
+    "path": "/api/uploads/{entryId}/source",
+    "auth": { "required": false },
+    "cloudFunctionName": "source-code",
+    "serverless": true
+  },
+  {
+    "name": "auth-providers",
+    "method": "GET",
+    "path": "/api/auth/providers",
+    "auth": { "required": false },
+    "cloudFunctionName": "auth-providers",
+    "serverless": true
+  },
+  {
+    "name": "google-auth-start",
+    "method": "GET",
+    "path": "/api/auth/google/start",
+    "auth": { "required": false },
+    "cloudFunctionName": "google-auth-start",
+    "serverless": true
+  },
+  {
+    "name": "google-auth-callback",
+    "method": "GET",
+    "path": "/api/auth/google/callback",
+    "auth": { "required": false },
+    "cloudFunctionName": "google-auth-callback",
+    "serverless": true
+  },
+  {
+    "name": "auth-me",
+    "method": "GET",
+    "path": "/api/auth/me",
+    "auth": { "required": true },
+    "cloudFunctionName": "auth-me",
+    "serverless": true
+  },
+  {
+    "name": "desktop-open",
+    "method": "GET",
+    "path": "/api/desktop/open",
+    "auth": { "required": false },
+    "cloudFunctionName": "desktop-open",
+    "serverless": true
+  }
+]

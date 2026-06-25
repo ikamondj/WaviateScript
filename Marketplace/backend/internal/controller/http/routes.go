@@ -11,6 +11,7 @@ import (
 	"github.com/waviate-script/marketplace/backend/internal/auth"
 	"github.com/waviate-script/marketplace/backend/internal/desktop"
 	"github.com/waviate-script/marketplace/backend/internal/domain"
+	"github.com/waviate-script/marketplace/backend/internal/endpoints"
 	"github.com/waviate-script/marketplace/backend/internal/persistence"
 	"github.com/waviate-script/marketplace/backend/internal/service"
 )
@@ -28,24 +29,71 @@ func NewRouter(service *service.Service, authMiddleware auth.Middleware, authMan
 		authManager: authManager,
 	}
 
+	return router.build(endpoints.ServerEndpoints(adminEnabled))
+}
+
+func NewEndpointRouter(service *service.Service, authMiddleware auth.Middleware, authManager *auth.Manager, endpoint endpoints.Endpoint) http.Handler {
+	router := Router{
+		service:     service,
+		auth:        authMiddleware,
+		authManager: authManager,
+	}
+
+	return router.build([]endpoints.Endpoint{endpoint})
+}
+
+func (router Router) build(routeDefinitions []endpoints.Endpoint) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", router.health)
-	mux.HandleFunc("GET /api/search", router.search)
-	mux.HandleFunc("GET /api/tags", router.tags)
-	mux.HandleFunc("POST /api/source/compile-check", router.compileCheck)
-	mux.Handle("POST /api/uploads", authMiddleware.RequireUser(http.HandlerFunc(router.upload)))
-	mux.HandleFunc("GET /api/uploads/{entryId}/source", router.sourceCode)
-	mux.HandleFunc("GET /api/auth/providers", router.authProviders)
-	mux.HandleFunc("GET /api/auth/google/start", router.googleAuthStart)
-	mux.HandleFunc("GET /api/auth/google/callback", router.googleAuthCallback)
-	mux.Handle("GET /api/auth/me", authMiddleware.RequireUser(http.HandlerFunc(router.me)))
-	mux.HandleFunc("GET /api/desktop/open", router.desktopOpen)
-	if adminEnabled {
-		mux.HandleFunc("POST /api/admin/clear", router.adminClear)
-		mux.HandleFunc("POST /api/admin/seed", router.adminSeed)
+	for _, endpoint := range routeDefinitions {
+		handler, ok := router.handler(endpoint)
+		if !ok {
+			continue
+		}
+
+		mux.Handle(endpoint.Method+" "+endpoint.Path, handler)
 	}
 
 	return withCORS(mux)
+}
+
+func (router Router) handler(endpoint endpoints.Endpoint) (http.Handler, bool) {
+	var handler http.Handler
+	switch endpoint.Name {
+	case endpoints.Health:
+		handler = http.HandlerFunc(router.health)
+	case endpoints.Search:
+		handler = http.HandlerFunc(router.search)
+	case endpoints.Tags:
+		handler = http.HandlerFunc(router.tags)
+	case endpoints.CompileCheck:
+		handler = http.HandlerFunc(router.compileCheck)
+	case endpoints.Upload:
+		handler = http.HandlerFunc(router.upload)
+	case endpoints.SourceCode:
+		handler = http.HandlerFunc(router.sourceCode)
+	case endpoints.AuthProviders:
+		handler = http.HandlerFunc(router.authProviders)
+	case endpoints.GoogleAuthStart:
+		handler = http.HandlerFunc(router.googleAuthStart)
+	case endpoints.GoogleAuthCallback:
+		handler = http.HandlerFunc(router.googleAuthCallback)
+	case endpoints.AuthMe:
+		handler = http.HandlerFunc(router.me)
+	case endpoints.DesktopOpen:
+		handler = http.HandlerFunc(router.desktopOpen)
+	case endpoints.AdminClear:
+		handler = http.HandlerFunc(router.adminClear)
+	case endpoints.AdminSeed:
+		handler = http.HandlerFunc(router.adminSeed)
+	default:
+		return nil, false
+	}
+
+	return router.auth.Apply(auth.Requirement{
+		Required:        endpoint.Auth.Required,
+		RequiredPlan:    endpoint.Auth.RequiredPlan,
+		CreatorRequired: endpoint.Auth.CreatorRequired,
+	}, handler), true
 }
 
 func (router Router) health(w http.ResponseWriter, _ *http.Request) {
