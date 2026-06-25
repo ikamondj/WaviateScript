@@ -69,9 +69,16 @@ const fallbackEntries = [
   },
 ];
 
+const fallbackSource = `float SampleProcess(const WaviateSample& wav)
+{
+    return wav.getIncomingSample();
+}
+`;
+
 const backendModes = new Set(['loc', 'local']);
 const defaultPageSize = 20;
 let activeLoad = 0;
+let activeTagLoad = 0;
 
 export const mockEntries = ref([]);
 export const marketplacePage = ref(createPageInfo(1, defaultPageSize, 0));
@@ -86,8 +93,71 @@ export const sortOptions = [
   { value: 'updated', label: 'Recently Updated' },
 ];
 
+export const matchModeOptions = [
+  { value: 'contains', label: 'Contains' },
+  { value: 'starts_with', label: 'Starts with' },
+  { value: 'exact', label: 'Exact match' },
+];
+
 export function usesMarketplaceBackend() {
   return backendModes.has(import.meta.env.MODE);
+}
+
+export async function loadMarketplaceTags() {
+  const loadId = ++activeTagLoad;
+
+  if (!usesMarketplaceBackend()) {
+    marketplaceTags.value = collectTags(fallbackEntries);
+    return marketplaceTags.value;
+  }
+
+  try {
+    const response = await fetch('/api/tags', {
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Marketplace tags failed with HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const tags = normalizeTags(Array.isArray(data.tags) ? data.tags : []);
+    if (loadId === activeTagLoad) {
+      marketplaceTags.value = tags;
+    }
+
+    return tags;
+  } catch (err) {
+    if (loadId === activeTagLoad) {
+      console.warn('Failed to fetch marketplace tags from backend.', err);
+      if (marketplaceTags.value.length === 0) {
+        marketplaceTags.value = collectTags(fallbackEntries);
+      }
+    }
+
+    return marketplaceTags.value;
+  }
+}
+
+export async function downloadEntrySource(entry) {
+  if (!usesMarketplaceBackend()) {
+    return entry.content || fallbackSource;
+  }
+
+  const response = await fetch(`/api/uploads/${encodeURIComponent(entry.id)}/source`, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Source download failed with HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.source || '';
 }
 
 export async function loadMarketplaceEntries(options = {}) {
@@ -128,29 +198,23 @@ export async function loadMarketplaceEntries(options = {}) {
 }
 
 async function loadBackendEntries(options) {
-  const needsClientTagFiltering = options.includedTags.length > 1 || options.excludedTags.length > 0;
-  const requestOptions = {
-    ...options,
-    page: needsClientTagFiltering ? 1 : options.page,
-    pageSize: needsClientTagFiltering ? 500 : options.pageSize,
-  };
-
   const params = new URLSearchParams();
-  params.set('page', String(requestOptions.page));
-  params.set('pageSize', String(requestOptions.pageSize));
-  params.set('sort', requestOptions.sort);
+  params.set('page', String(options.page));
+  params.set('pageSize', String(options.pageSize));
+  params.set('sort', options.sort);
+  params.set('qMode', options.queryMode);
+  params.set('userMode', options.userMode);
 
-  if (requestOptions.query) {
-    params.set('q', requestOptions.query);
+  if (options.query) {
+    params.set('q', options.query);
   }
 
-  if (requestOptions.user) {
-    params.set('user', requestOptions.user);
+  if (options.user) {
+    params.set('user', options.user);
   }
 
-  if (requestOptions.includedTags[0]) {
-    params.set('tag', requestOptions.includedTags[0]);
-  }
+  options.includedTags.forEach((tag) => params.append('includeTag', tag));
+  options.excludedTags.forEach((tag) => params.append('excludeTag', tag));
 
   const response = await fetch(`/api/search?${params.toString()}`, {
     headers: {
@@ -165,13 +229,6 @@ async function loadBackendEntries(options) {
   const data = await response.json();
   const entries = (data.entries || []).map(mapBackendEntry);
 
-  if (needsClientTagFiltering) {
-    return paginateEntries(
-      filterEntriesByTags(entries, options.includedTags, options.excludedTags),
-      options,
-    );
-  }
-
   return {
     entries,
     page: normalizePage(data.page, options, entries.length),
@@ -182,12 +239,8 @@ function searchFallbackEntries(options) {
   const loweredQuery = options.query.toLowerCase();
   const loweredUser = options.user.toLowerCase();
   const filteredEntries = fallbackEntries.filter((entry) => {
-    const matchesQuery =
-      !loweredQuery ||
-      entry.title.toLowerCase().includes(loweredQuery) ||
-      entry.summary.toLowerCase().includes(loweredQuery) ||
-      entry.tags.some((entryTag) => entryTag.toLowerCase().includes(loweredQuery));
-    const matchesUser = !loweredUser || entry.author.toLowerCase().includes(loweredUser);
+    const matchesQuery = !loweredQuery || matchesText(entry.title, loweredQuery, options.queryMode);
+    const matchesUser = !loweredUser || matchesText(entry.author, loweredUser, options.userMode);
 
     return (
       matchesQuery &&
@@ -196,7 +249,13 @@ function searchFallbackEntries(options) {
     );
   });
 
-  return paginateEntries(sortEntries(filteredEntries, options.sort), options);
+  return paginateEntries(
+    sortEntries(filteredEntries, options.sort).map((entry) => ({
+      ...entry,
+      content: entry.content || fallbackSource,
+    })),
+    options,
+  );
 }
 
 function applyResult(result, source, loadId) {
@@ -207,13 +266,19 @@ function applyResult(result, source, loadId) {
   mockEntries.value = result.entries;
   marketplacePage.value = result.page;
   marketplaceDataSource.value = source;
-  marketplaceTags.value = source === 'fallback' ? collectTags(fallbackEntries) : mergeTags(result.entries);
+  if (source === 'fallback') {
+    marketplaceTags.value = collectTags(fallbackEntries);
+  } else if (marketplaceTags.value.length === 0) {
+    marketplaceTags.value = mergeTags(result.entries);
+  }
 }
 
 function normalizeOptions(options) {
   return {
     query: String(options.query || '').trim(),
+    queryMode: normalizeMatchMode(options.queryMode),
     user: String(options.user || '').trim(),
+    userMode: normalizeMatchMode(options.userMode),
     includedTags: normalizeTags(options.includedTags || options.tags || (options.tag ? [options.tag] : [])),
     excludedTags: normalizeTags(options.excludedTags || []),
     sort: options.sort || 'rating',
@@ -224,6 +289,17 @@ function normalizeOptions(options) {
 
 function normalizeTags(tags) {
   return tags.map((tag) => String(tag).trim()).filter(Boolean);
+}
+
+function normalizeMatchMode(mode) {
+  if (mode === 'exact') {
+    return 'exact';
+  }
+  if (mode === 'starts_with' || mode === 'starts' || mode === 'begins') {
+    return 'starts_with';
+  }
+
+  return 'contains';
 }
 
 function normalizePositiveInt(value, fallback) {
@@ -273,6 +349,18 @@ function filterEntriesByTags(entries, includedTags, excludedTags) {
       excludedTags.every((entryTag) => !entryTags.has(entryTag))
     );
   });
+}
+
+function matchesText(value, loweredNeedle, mode) {
+  const loweredValue = String(value || '').toLowerCase();
+  if (mode === 'exact') {
+    return loweredValue === loweredNeedle;
+  }
+  if (mode === 'starts_with') {
+    return loweredValue.startsWith(loweredNeedle);
+  }
+
+  return loweredValue.includes(loweredNeedle);
 }
 
 function sortEntries(entries, sortBy) {

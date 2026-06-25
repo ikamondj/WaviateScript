@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
+  downloadEntrySource,
+  loadMarketplaceTags,
   loadMarketplaceEntries,
+  matchModeOptions,
   marketplaceError,
   marketplaceLoading,
   marketplacePage,
@@ -12,8 +15,11 @@ import {
 import { highlightCpp } from '../data/cppHighlight';
 
 const query = ref('');
+const queryMode = ref('contains');
 const author = ref('');
+const authorMode = ref('contains');
 const tagSelections = ref({});
+const tagSearch = ref('');
 const tagDropdownOpen = ref(false);
 const tagDropdown = ref(null);
 const sortBy = ref('rating');
@@ -22,15 +28,37 @@ const pageSize = 4;
 const appliedSearch = ref(emptySearchCriteria());
 const sourcePreviewEntry = ref(null);
 
-const allTags = computed(() => marketplaceTags.value);
+const allTags = computed(() =>
+  [...new Set([...marketplaceTags.value, ...Object.keys(tagSelections.value)])].sort(),
+);
 
 const includedTags = computed(() =>
-  allTags.value.filter((entryTag) => tagSelections.value[entryTag] === 'include'),
+  Object.entries(tagSelections.value)
+    .filter(([, selection]) => selection === 'include')
+    .map(([entryTag]) => entryTag)
+    .sort(),
 );
 
 const excludedTags = computed(() =>
-  allTags.value.filter((entryTag) => tagSelections.value[entryTag] === 'exclude'),
+  Object.entries(tagSelections.value)
+    .filter(([, selection]) => selection === 'exclude')
+    .map(([entryTag]) => entryTag)
+    .sort(),
 );
+
+const selectedTagBadges = computed(() =>
+  [...includedTags.value.map((entryTag) => ({ name: entryTag, mode: 'include' })),
+    ...excludedTags.value.map((entryTag) => ({ name: entryTag, mode: 'exclude' }))],
+);
+
+const visibleTags = computed(() => {
+  const needle = tagSearch.value.trim().toLowerCase();
+  if (!needle) {
+    return allTags.value;
+  }
+
+  return allTags.value.filter((entryTag) => entryTag.toLowerCase().includes(needle));
+});
 
 const tagFilterLabel = computed(() => {
   const includedCount = includedTags.value.length;
@@ -59,8 +87,11 @@ const highlightedPreviewSource = computed(() => highlightCpp(sourcePreviewEntry.
 
 function resetSearch() {
   query.value = '';
+  queryMode.value = 'contains';
   author.value = '';
+  authorMode.value = 'contains';
   tagSelections.value = {};
+  tagSearch.value = '';
   tagDropdownOpen.value = false;
   sortBy.value = 'rating';
   appliedSearch.value = emptySearchCriteria();
@@ -124,10 +155,27 @@ function closeSourcePreview() {
   sourcePreviewEntry.value = null;
 }
 
+async function downloadSource(entry) {
+  try {
+    const source = await downloadEntrySource(entry);
+    const blob = new Blob([source], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${entry.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'waviate-script'}.wlsl`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (err) {
+    console.warn('Failed to download source.', err);
+    window.alert(`Source download failed for "${entry.title}".`);
+  }
+}
+
 function emptySearchCriteria() {
   return {
     query: '',
+    queryMode: 'contains',
     user: '',
+    userMode: 'contains',
     includedTags: [],
     excludedTags: [],
     sort: 'rating',
@@ -137,7 +185,9 @@ function emptySearchCriteria() {
 function readDraftCriteria() {
   return {
     query: query.value.trim(),
+    queryMode: queryMode.value,
     user: author.value.trim(),
+    userMode: authorMode.value,
     includedTags: [...includedTags.value],
     excludedTags: [...excludedTags.value],
     sort: sortBy.value,
@@ -147,7 +197,9 @@ function readDraftCriteria() {
 function sameCriteria(left, right) {
   return (
     left.query === right.query &&
+    left.queryMode === right.queryMode &&
     left.user === right.user &&
+    left.userMode === right.userMode &&
     left.sort === right.sort &&
     sameArray(left.includedTags, right.includedTags) &&
     sameArray(left.excludedTags, right.excludedTags)
@@ -161,6 +213,7 @@ function sameArray(left, right) {
 onMounted(() => {
   document.addEventListener('click', closeTagDropdownOnOutsideClick);
   document.addEventListener('keydown', closePreviewOnEscape);
+  loadMarketplaceTags();
   refreshSearch();
 });
 
@@ -193,12 +246,28 @@ function closePreviewOnEscape(event) {
 
     <div class="filters">
       <label>
-        Search
+        Name
         <input v-model="query" type="search" placeholder="pads, spectral, bass..." />
       </label>
       <label>
-        User
+        Name Mode
+        <select v-model="queryMode">
+          <option v-for="option in matchModeOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+      <label>
+        Author
         <input v-model="author" type="search" placeholder="creator handle" />
+      </label>
+      <label>
+        Author Mode
+        <select v-model="authorMode">
+          <option v-for="option in matchModeOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
       </label>
       <div class="field">
         <span class="field-label">Tag</span>
@@ -219,7 +288,28 @@ function closePreviewOnEscape(event) {
           </button>
 
           <div v-if="tagDropdownOpen" class="tag-dropdown-menu" role="menu" aria-label="Tag filters">
-            <div v-for="entryTag in allTags" :key="entryTag" class="tag-option">
+            <input
+              v-model="tagSearch"
+              class="tag-search"
+              type="search"
+              placeholder="Search tags"
+              @click.stop
+            />
+
+            <div v-if="selectedTagBadges.length" class="selected-tags">
+              <button
+                v-for="badge in selectedTagBadges"
+                :key="`${badge.mode}:${badge.name}`"
+                type="button"
+                class="selected-tag"
+                :class="badge.mode"
+                @click="toggleTagSelection(badge.name, badge.mode)"
+              >
+                {{ badge.mode === 'include' ? '+' : '-' }} {{ badge.name }}
+              </button>
+            </div>
+
+            <div v-for="entryTag in visibleTags" :key="entryTag" class="tag-option">
               <span class="tag-option-name">{{ entryTag }}</span>
               <div class="tag-option-actions">
                 <button
@@ -244,6 +334,8 @@ function closePreviewOnEscape(event) {
                 </button>
               </div>
             </div>
+
+            <div v-if="visibleTags.length === 0" class="tag-empty">No tags found.</div>
           </div>
         </div>
       </div>
@@ -290,6 +382,9 @@ function closePreviewOnEscape(event) {
           <div class="entry-actions">
             <button type="button" class="source-preview-button" @click="previewSource(entry)">
               Preview Source
+            </button>
+            <button type="button" class="source-preview-button" @click="downloadSource(entry)">
+              Download Source
             </button>
             <button type="button" @click="installEntry(entry)">Open in App</button>
           </div>

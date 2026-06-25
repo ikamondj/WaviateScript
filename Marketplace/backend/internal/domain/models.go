@@ -2,6 +2,15 @@ package domain
 
 import "time"
 
+const (
+	MatchModeContains   = "contains"
+	MatchModeStartsWith = "starts_with"
+	MatchModeExact      = "exact"
+
+	PlanStandard = "standard"
+	PlanPremium  = "premium"
+)
+
 type ScriptEntry struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`
@@ -44,17 +53,24 @@ type CompilerStatus struct {
 }
 
 type SearchQuery struct {
-	Query    string
-	User     string
-	Tag      string
-	Sort     string
-	Page     int
-	PageSize int
+	Query        string
+	QueryMode    string
+	User         string
+	UserMode     string
+	IncludedTags []string
+	ExcludedTags []string
+	Sort         string
+	Page         int
+	PageSize     int
 }
 
 type SearchResult struct {
 	Entries []ScriptEntry `json:"entries"`
 	Page    PageInfo      `json:"page"`
+}
+
+type TagsResponse struct {
+	Tags []string `json:"tags"`
 }
 
 type SourceCodeResponse struct {
@@ -76,4 +92,42 @@ type AdminActionResult struct {
 
 type SeedScriptResult struct {
 	Name string `json:"name"`
+}
+
+type OAuthIdentity struct {
+	Provider     string
+	Subject      string
+	Username     string
+	Email        string
+	DisplayName  string
+	AccessToken  string
+	RefreshToken string
+	ExpiresAt    *time.Time
+}
+
+type SessionToken struct {
+	TokenHash string
+	UserID    string
+	ExpiresAt time.Time
+}
+
+type AuthenticatedUser struct {
+	ID                    string     `json:"id"`
+	DisplayName           string     `json:"displayName"`
+	Email                 string     `json:"email,omitempty"`
+	AuthorID              string     `json:"authorId"`
+	AuthorName            string     `json:"authorName"`
+	Plan                  string     `json:"plan"`
+	Creator               bool       `json:"creator"`
+	SubscriptionExpiresAt *time.Time `json:"subscriptionExpiresAt,omitempty"`
+	SubscriptionActive    bool       `json:"subscriptionActive"`
+	UploadLimit           int        `json:"uploadLimit"`
+	UploadLimitUnlimited  bool       `json:"uploadLimitUnlimited"`
+	UploadCount           int        `json:"uploadCount"`
+}
+
+type AuthSession struct {
+	Token     string            `json:"token"`
+	ExpiresAt time.Time         `json:"expiresAt"`
+	User      AuthenticatedUser `json:"user"`
 }

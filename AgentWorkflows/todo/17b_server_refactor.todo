@@ -1,0 +1,167 @@
+# Additional Workflow: Traditional Go Server Deployment
+
+The backend Go app already supports the needed business logic. This workflow is specifically for the traditional long-running server deployment path.
+
+Do not frame this as a serverless migration.
+
+---
+
+## Workflow: Server endpoint parity
+
+Ensure the traditional Go server exposes the same marketplace behavior already expected from the backend:
+
+* Google OAuth login flow
+* Authenticated upload endpoints
+* Standard / premium / creator upload restrictions
+* Marketplace search
+* Tag inclusion/exclusion
+* Author/name search modes
+* Upload validation
+* Server-side compile validation
+* Open-source download/decompress/format flow
+
+Server mode should not drift from existing backend behavior.
+
+---
+
+## Workflow: Clean Go middleware auth
+
+Implement auth as reusable Go middleware / cross-cutting logic.
+
+Requirements:
+
+* Validate auth tokens.
+* Reject expired/invalid tokens.
+* Load user/account identity.
+* Attach authenticated user context to requests.
+* Enforce endpoint-level auth requirements.
+* Enforce role/plan restrictions where needed.
+* Keep creator separate from premium.
+* Avoid duplicating auth checks inside every handler.
+
+Use middleware or handler wrappers rather than scattered inline auth code.
+
+---
+
+## Workflow: Endpoint metadata / routing
+
+Create or verify a clean endpoint registration pattern.
+
+Each route should clearly define:
+
+* Path
+* HTTP method
+* Whether auth is required
+* Required role/plan where applicable
+* Handler function
+
+Preferred implementation:
+
+* Explicit Go route registry
+* Struct-based route definitions
+* Router setup generated from that registry
+
+Avoid overly magical reflection unless it is already established in the codebase and remains easy to reason about.
+
+---
+
+## Workflow: Lightweight stateless cloud server design
+
+Design the server deployment so it behaves well as a lightweight stateless cloud service.
+
+Requirements:
+
+* No local persistent state.
+* No in-memory session dependence.
+* Database remains the source of truth.
+* Tokens are validated per request.
+* Config/secrets come from environment variables or a secret manager.
+* Server can be horizontally scaled.
+* Startup should be simple and reliable.
+* Graceful shutdown should be implemented.
+* Healthcheck endpoint should exist.
+* Logging should be structured enough for cloud logs.
+
+---
+
+## Workflow: Infrastructure automation for server deployment
+
+Write Terraform for deploying the traditional Go server.
+
+Target a lightweight cloud deployment model such as:
+
+* AWS ECS/Fargate
+* AWS App Runner
+* Google Cloud Run
+* Azure Container Apps
+
+Start with the platform most appropriate for the existing project.
+
+Terraform should automate:
+
+* Container/service deployment
+* Environment variables
+* Secret references
+* Database/network access
+* IAM/service permissions
+* HTTPS/load balancer or managed ingress
+* Healthcheck configuration
+* Logging configuration
+* Autoscaling/min/max instance settings if supported
+
+Do not require manual console setup for normal deployment.
+
+---
+
+## Workflow: OAuth placement
+
+Determine whether OAuth/token validation belongs in:
+
+* Go middleware
+* Cloud ingress/auth config
+* A hybrid setup
+
+For this project, keep marketplace account/role/plan logic in Go.
+
+Even if cloud auth is used, Go still needs to enforce:
+
+* Account identity mapping
+* Standard upload limit
+* Premium subscription upload limit
+* Creator unlimited upload permission
+* Endpoint-specific permissions
+
+---
+
+## Workflow: Testing
+
+Add tests for:
+
+* Auth middleware
+* Expired token rejection
+* Public route access
+* Protected route access
+* Upload limit enforcement
+* Premium vs creator distinction
+* Route registration correctness
+* Healthcheck
+* Server startup/shutdown if practical
+
+Also verify parity with existing backend behavior.
+
+---
+
+## Suggested execution order
+
+1. Inspect current Go server entrypoint and router.
+2. Identify all marketplace routes.
+3. Create or clean up explicit route metadata.
+4. Implement reusable auth middleware.
+5. Apply middleware consistently across protected endpoints.
+6. Add stateless cloud-readiness improvements.
+7. Add healthcheck and structured logging.
+8. Write Terraform for containerized server deployment.
+9. Wire secrets/config/database/networking in Terraform.
+10. Add tests for auth, routing, permissions, and deployment assumptions.
+
+Final result should be a clean, stateless, cloud-ready traditional Go server deployment with infrastructure automation and reusable auth middleware.

@@ -89,6 +89,12 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
             });
     };
 
+    toolbar.addAndMakeVisible(loginButton);
+    loginButton.onClick = [this] { showLoginMenu(); };
+
+    toolbar.addAndMakeVisible(uploadButton);
+    uploadButton.onClick = [this] { uploadCurrentScriptToMarketplace(); };
+
     // File info label
     addAndMakeVisible(currentFileLabel);
     currentFileLabel.setText("No file loaded", juce::dontSendNotification);
@@ -115,6 +121,7 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
     showEmptyState();
 
     userSettings = std::make_unique<juce::PropertiesFile>(createSettingsOptions());
+    marketplaceClient = std::make_unique<MarketplaceClient>(*userSettings);
     setFuelLimitPreset(
         waviate::compile::fuelLimitPresetFromId(
             userSettings->getValue(
@@ -123,6 +130,7 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
         false);
     setCompletionsEnabled(userSettings->getBoolValue(codeCompletionsSettingKey, true), false);
     selectTheme(userSettings->getValue("theme", WaviateThemes::fallback().id), false);
+    updateMarketplaceButtons();
     loadLastOpenedFileIfAvailable();
     
     addChildComponent(audioClipsPanel);
@@ -173,6 +181,12 @@ void WaviateScriptAudioProcessorEditor::resized()
         toolbarBounds.removeFromLeft(padding);
 
         helpMenuButton.setBounds(toolbarBounds.removeFromLeft(buttonWidth));
+        toolbarBounds.removeFromLeft(padding);
+
+        loginButton.setBounds(toolbarBounds.removeFromLeft(accountButtonWidth));
+        toolbarBounds.removeFromLeft(padding);
+
+        uploadButton.setBounds(toolbarBounds.removeFromLeft(uploadButtonWidth));
         toolbarBounds.removeFromLeft(padding * 2);
 
         currentFileLabel.setBounds(toolbarBounds);
@@ -350,6 +364,149 @@ void WaviateScriptAudioProcessorEditor::showToolsMenu()
             if (fuelLimitIndex >= 0 && fuelLimitIndex < static_cast<int>(fuelLimitMenuPresets.size()))
                 setFuelLimitPreset(fuelLimitMenuPresets[static_cast<size_t>(fuelLimitIndex)], true);
         });
+}
+
+void WaviateScriptAudioProcessorEditor::showLoginMenu()
+{
+    if (marketplaceClient == nullptr || ! marketplaceClient->hasValidSession())
+    {
+        beginMarketplaceLogin();
+        return;
+    }
+
+    juce::PopupMenu accountMenu;
+    accountMenu.addItem(1, "Session expires " + marketplaceClient->getSessionExpiryText(), false);
+    accountMenu.addSeparator();
+    accountMenu.addItem(2, "Login Again", true);
+    accountMenu.addItem(3, "Log Out", true);
+
+    accountMenu.showMenuAsync(juce::PopupMenu::Options()
+        .withTargetComponent(&loginButton),
+        [this](int result) {
+            if (result == 2)
+                beginMarketplaceLogin();
+            else if (result == 3 && marketplaceClient != nullptr)
+            {
+                marketplaceClient->clearSession();
+                updateMarketplaceButtons();
+            }
+        });
+}
+
+void WaviateScriptAudioProcessorEditor::beginMarketplaceLogin()
+{
+    if (marketplaceClient == nullptr)
+        return;
+
+    if (! marketplaceClient->launchLogin())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            "Marketplace Login",
+            "Could not open the marketplace login page.");
+        return;
+    }
+
+    showMarketplaceTokenDialog();
+}
+
+void WaviateScriptAudioProcessorEditor::showMarketplaceTokenDialog()
+{
+    auto* alert = new juce::AlertWindow(
+        "Marketplace Login",
+        "Paste the marketplace session value shown in your browser.",
+        juce::MessageBoxIconType::QuestionIcon);
+    alert->addTextEditor("session", "", "Session");
+    alert->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    alert->enterModalState(true, juce::ModalCallbackFunction::create([this, alert](int result) {
+        if (result == 1)
+            handleMarketplaceSessionPaste(alert->getTextEditorContents("session"));
+
+        delete alert;
+    }));
+}
+
+void WaviateScriptAudioProcessorEditor::handleMarketplaceSessionPaste(const juce::String& pastedSession)
+{
+    if (marketplaceClient == nullptr)
+        return;
+
+    juce::String errorMessage;
+    if (! marketplaceClient->storeSessionPaste(pastedSession, errorMessage))
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            "Marketplace Login",
+            errorMessage);
+        updateMarketplaceButtons();
+        return;
+    }
+
+    updateMarketplaceButtons();
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::InfoIcon,
+        "Marketplace Login",
+        "You are logged in to WaviateScript Marketplace.");
+}
+
+void WaviateScriptAudioProcessorEditor::uploadCurrentScriptToMarketplace()
+{
+    if (marketplaceClient == nullptr)
+        return;
+
+    updateMarketplaceButtons();
+    if (! marketplaceClient->hasValidSession())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            "Marketplace Upload",
+            "Log in before uploading marketplace scripts.");
+        return;
+    }
+
+    if (! codeEditor.isVisible() || codeEditor.getText().trim().isEmpty())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            "Marketplace Upload",
+            "Open or create a script before uploading.");
+        return;
+    }
+
+    const auto uploadName = currentScriptFile.existsAsFile()
+        ? currentScriptFile.getFileNameWithoutExtension()
+        : juce::String("Untitled Waviate Script");
+    juce::StringArray tags;
+    tags.add("sample-shader");
+
+    const auto result = marketplaceClient->uploadScript(
+        uploadName,
+        "Uploaded from the WaviateScript desktop client.",
+        codeEditor.getText(),
+        tags,
+        false);
+
+    if (! result.succeeded
+        && (result.message.containsIgnoreCase("authentication")
+            || result.message.containsIgnoreCase("expired")))
+    {
+        marketplaceClient->clearSession();
+    }
+
+    updateMarketplaceButtons();
+    juce::AlertWindow::showMessageBoxAsync(
+        result.succeeded ? juce::AlertWindow::InfoIcon : juce::AlertWindow::WarningIcon,
+        "Marketplace Upload",
+        result.message);
+}
+
+void WaviateScriptAudioProcessorEditor::updateMarketplaceButtons()
+{
+    const bool loggedIn = marketplaceClient != nullptr && marketplaceClient->hasValidSession();
+    loginButton.setButtonText(loggedIn ? "Account" : "Login");
+    uploadButton.setEnabled(loggedIn);
 }
 
 void WaviateScriptAudioProcessorEditor::createNewFile()
@@ -764,6 +921,8 @@ void WaviateScriptAudioProcessorEditor::applyTheme(const WaviateTheme& theme, bo
     applyButtonColours(viewMenuButton);
     applyButtonColours(toolsMenuButton);
     applyButtonColours(helpMenuButton);
+    applyButtonColours(loginButton);
+    applyButtonColours(uploadButton);
 
     currentFileLabel.setColour(juce::Label::textColourId, theme.mutedText);
     emptyStateLabel.setColour(juce::Label::textColourId, theme.mutedText);
@@ -833,6 +992,8 @@ juce::File WaviateScriptAudioProcessorEditor::getDefaultSaveDirectory() const
 
 void WaviateScriptAudioProcessorEditor::timerCallback()
 {
+    updateMarketplaceButtons();
+
     if (isAudioClipsPanelOpen)
     {
         audioClipsPanel.updateList();

@@ -3,6 +3,8 @@ package httpcontroller
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 
@@ -14,23 +16,29 @@ import (
 )
 
 type Router struct {
-	service *service.Service
-	auth    auth.Middleware
+	service     *service.Service
+	auth        auth.Middleware
+	authManager *auth.Manager
 }
 
-func NewRouter(service *service.Service, authMiddleware auth.Middleware, adminEnabled bool) http.Handler {
+func NewRouter(service *service.Service, authMiddleware auth.Middleware, authManager *auth.Manager, adminEnabled bool) http.Handler {
 	router := Router{
-		service: service,
-		auth:    authMiddleware,
+		service:     service,
+		auth:        authMiddleware,
+		authManager: authManager,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", router.health)
 	mux.HandleFunc("GET /api/search", router.search)
+	mux.HandleFunc("GET /api/tags", router.tags)
 	mux.HandleFunc("POST /api/source/compile-check", router.compileCheck)
 	mux.Handle("POST /api/uploads", authMiddleware.RequireUser(http.HandlerFunc(router.upload)))
 	mux.HandleFunc("GET /api/uploads/{entryId}/source", router.sourceCode)
 	mux.HandleFunc("GET /api/auth/providers", router.authProviders)
+	mux.HandleFunc("GET /api/auth/google/start", router.googleAuthStart)
+	mux.HandleFunc("GET /api/auth/google/callback", router.googleAuthCallback)
+	mux.Handle("GET /api/auth/me", authMiddleware.RequireUser(http.HandlerFunc(router.me)))
 	mux.HandleFunc("GET /api/desktop/open", router.desktopOpen)
 	if adminEnabled {
 		mux.HandleFunc("POST /api/admin/clear", router.adminClear)
@@ -46,13 +54,22 @@ func (router Router) health(w http.ResponseWriter, _ *http.Request) {
 
 func (router Router) search(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
+	includedTags := append([]string{}, query["includeTag"]...)
+	includedTags = append(includedTags, query["includedTag"]...)
+	if tag := query.Get("tag"); tag != "" {
+		includedTags = append(includedTags, tag)
+	}
+
 	result, err := router.service.Search(r.Context(), domain.SearchQuery{
-		Query:    query.Get("q"),
-		User:     query.Get("user"),
-		Tag:      query.Get("tag"),
-		Sort:     query.Get("sort"),
-		Page:     readInt(query.Get("page"), 1),
-		PageSize: readInt(query.Get("pageSize"), 20),
+		Query:        query.Get("q"),
+		QueryMode:    query.Get("qMode"),
+		User:         query.Get("user"),
+		UserMode:     query.Get("userMode"),
+		IncludedTags: includedTags,
+		ExcludedTags: append(query["excludeTag"], query["excludedTag"]...),
+		Sort:         query.Get("sort"),
+		Page:         readInt(query.Get("page"), 1),
+		PageSize:     readInt(query.Get("pageSize"), 20),
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -60,6 +77,16 @@ func (router Router) search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (router Router) tags(w http.ResponseWriter, r *http.Request) {
+	tags, err := router.service.ListTags(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, domain.TagsResponse{Tags: tags})
 }
 
 func (router Router) upload(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +97,14 @@ func (router Router) upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entry, err := router.service.Upload(r.Context(), request)
+	if errors.Is(err, service.ErrUploadLimitExceeded) {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if errors.Is(err, auth.ErrUnauthenticated) {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -109,8 +144,50 @@ func (router Router) sourceCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (router Router) authProviders(w http.ResponseWriter, _ *http.Request) {
-	// TODO: Hide providers whose environment variables are not configured.
-	writeJSON(w, http.StatusOK, auth.DefaultProviders())
+	writeJSON(w, http.StatusOK, router.authManager.Providers())
+}
+
+func (router Router) googleAuthStart(w http.ResponseWriter, r *http.Request) {
+	loginURL, err := router.authManager.AuthorizationURL("google", r.URL.Query().Get("client"))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+
+	if r.URL.Query().Get("format") == "json" {
+		writeJSON(w, http.StatusOK, map[string]string{"url": loginURL})
+		return
+	}
+
+	http.Redirect(w, r, loginURL, http.StatusFound)
+}
+
+func (router Router) googleAuthCallback(w http.ResponseWriter, r *http.Request) {
+	result, err := router.authManager.CompleteCallback(
+		r.Context(),
+		r.URL.Query().Get("code"),
+		r.URL.Query().Get("state"),
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	writeLoginComplete(w, result)
+}
+
+func (router Router) me(w http.ResponseWriter, r *http.Request) {
+	result, err := router.service.Me(r.Context())
+	if errors.Is(err, auth.ErrUnauthenticated) {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (router Router) desktopOpen(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +251,43 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
+
+func writeLoginComplete(w http.ResponseWriter, result auth.CallbackResult) {
+	session := result.Session
+	pasteToken := fmt.Sprintf("%s|%s", session.Token, session.ExpiresAt.UTC().Format(timeFormatRFC3339))
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+
+	_ = loginCompleteTemplate.Execute(w, map[string]string{
+		"PasteToken": pasteToken,
+		"ExpiresAt":  session.ExpiresAt.UTC().Format(timeFormatRFC3339),
+		"Client":     result.Client,
+	})
+}
+
+const timeFormatRFC3339 = "2006-01-02T15:04:05Z07:00"
+
+var loginCompleteTemplate = template.Must(template.New("login-complete").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WaviateScript Login Complete</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #070812; color: #edf7ff; }
+    main { max-width: 760px; margin: 10vh auto; padding: 28px; }
+    code { display: block; overflow-wrap: anywhere; border: 1px solid #45f0ff66; border-radius: 8px; background: #050813; padding: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>WaviateScript login complete</h1>
+    <p>Your marketplace session expires at {{ .ExpiresAt }}.</p>
+    <p>For the desktop client, paste this session value into WaviateScript:</p>
+    <code>{{ .PasteToken }}</code>
+  </main>
+</body>
+</html>`))
 
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

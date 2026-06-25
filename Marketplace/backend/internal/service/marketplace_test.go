@@ -58,6 +58,47 @@ func TestCompileCheckRunsSourceValidationAndCompilerHook(t *testing.T) {
 	}
 }
 
+func TestUploadLimitRoles(t *testing.T) {
+	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
+	activeSubscription := now.Add(24 * time.Hour)
+	expiredSubscription := now.Add(-24 * time.Hour)
+
+	standard := domain.AuthenticatedUser{Plan: domain.PlanStandard}
+	if !userCanUpload(standard, 4, now) {
+		t.Fatalf("expected standard user below limit to upload")
+	}
+	if userCanUpload(standard, 5, now) {
+		t.Fatalf("expected standard user at limit to be blocked")
+	}
+
+	premium := domain.AuthenticatedUser{
+		Plan:                  domain.PlanPremium,
+		SubscriptionExpiresAt: &activeSubscription,
+	}
+	if !userCanUpload(premium, 199, now) {
+		t.Fatalf("expected active premium user below limit to upload")
+	}
+	if userCanUpload(premium, 200, now) {
+		t.Fatalf("expected active premium user at limit to be blocked")
+	}
+
+	expiredPremium := domain.AuthenticatedUser{
+		Plan:                  domain.PlanPremium,
+		SubscriptionExpiresAt: &expiredSubscription,
+	}
+	if userCanUpload(expiredPremium, 5, now) {
+		t.Fatalf("expected expired premium user to fall back to standard limit")
+	}
+
+	creator := domain.AuthenticatedUser{
+		Plan:    domain.PlanStandard,
+		Creator: true,
+	}
+	if !userCanUpload(creator, 10_000, now) {
+		t.Fatalf("expected creator role to allow unlimited uploads")
+	}
+}
+
 type fakeStore struct {
 	entry domain.ScriptEntry
 }
@@ -74,6 +115,10 @@ func (store fakeStore) Search(context.Context, domain.SearchQuery) (domain.Searc
 	}, nil
 }
 
+func (store fakeStore) ListTags(context.Context) ([]string, error) {
+	return []string{"sample-shader"}, nil
+}
+
 func (store fakeStore) SaveUpload(context.Context, domain.UploadRequest) (domain.ScriptEntry, error) {
 	return domain.ScriptEntry{}, nil
 }
@@ -84,4 +129,20 @@ func (store fakeStore) GetByID(context.Context, string) (domain.ScriptEntry, err
 	}
 
 	return store.entry, nil
+}
+
+func (store fakeStore) CountUploadsByAuthor(context.Context, string) (int, error) {
+	return 0, nil
+}
+
+func (store fakeStore) UpsertOAuthUser(context.Context, domain.OAuthIdentity) (domain.AuthenticatedUser, error) {
+	return domain.AuthenticatedUser{}, nil
+}
+
+func (store fakeStore) CreateSession(context.Context, domain.SessionToken) error {
+	return nil
+}
+
+func (store fakeStore) FindSessionByTokenHash(context.Context, string, time.Time) (domain.AuthenticatedUser, error) {
+	return domain.AuthenticatedUser{}, persistence.ErrNotFound
 }

@@ -224,6 +224,8 @@ target_sources(WaviateScript
         Source/CppFileTemplateGenerator.cpp
         Source/CppFileTemplateGenerator.h
         Source/LockFreeFifo.h
+        Source/MarketplaceClient.cpp
+        Source/MarketplaceClient.h
         Source/NewFileTemplateGenerator.cpp
         Source/NewFileTemplateGenerator.h
         Source/PluginEditor.cpp

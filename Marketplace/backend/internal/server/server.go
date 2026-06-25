@@ -56,8 +56,15 @@ func NewHandler() http.Handler {
 		log.Println("Wired to in-memory dummy data store")
 	}
 
+	authManager := auth.NewManager(store, auth.Config{
+		BaseURL:            cfg.AuthBaseURL,
+		Secret:             cfg.AuthSecret,
+		GoogleClientID:     cfg.GoogleClientID,
+		GoogleClientSecret: cfg.GoogleClientSecret,
+		SessionTTL:         cfg.SessionTTL,
+	})
 	marketplaceService := service.NewService(store)
-	return httpcontroller.NewRouter(marketplaceService, auth.Middleware{}, cfg.LocalAdmin)
+	return httpcontroller.NewRouter(marketplaceService, auth.NewMiddleware(authManager), authManager, cfg.LocalAdmin)
 }
 
 // parseHostPort splits a "host:port" string, defaulting to localhost / 5432.

@@ -12,6 +12,31 @@ ON CONFLICT (email) DO UPDATE
     SET display_name = EXCLUDED.display_name,
         updated_at = now();
 
+UPDATE marketplace_users
+SET plan = 'premium',
+    subscription_expires_at = '2027-06-25T00:00:00Z'::timestamptz,
+    creator = false,
+    updated_at = now()
+WHERE email = 'modmatrix@example.local';
+
+UPDATE marketplace_users
+SET plan = 'standard',
+    subscription_expires_at = NULL,
+    creator = true,
+    updated_at = now()
+WHERE email = 'phasefold@example.local';
+
+UPDATE marketplace_users
+SET plan = 'standard',
+    subscription_expires_at = NULL,
+    creator = false,
+    updated_at = now()
+WHERE email IN (
+    'nullcarrier@example.local',
+    'signalweld@example.local',
+    'noctshape@example.local'
+);
+
 INSERT INTO user_credentials (
     user_id,
     provider,

@@ -15,8 +15,17 @@ func ValidateUpload(request domain.UploadRequest) error {
 	if strings.TrimSpace(request.Name) == "" {
 		return errors.New("name is required")
 	}
+	if len([]rune(request.Name)) > 120 {
+		return errors.New("name must be 120 characters or fewer")
+	}
 	if strings.TrimSpace(request.AuthorID) == "" {
 		return errors.New("authorId is required")
+	}
+	if strings.TrimSpace(request.Description) == "" {
+		return errors.New("description is required")
+	}
+	if len([]rune(request.Description)) > 2000 {
+		return errors.New("description must be 2000 characters or fewer")
 	}
 	if len(request.Tags) > 12 {
 		return errors.New("uploads can include at most 12 tags")
