@@ -14,3 +14,8 @@ type Store interface {
 	SaveUpload(ctx context.Context, upload domain.UploadRequest) (domain.ScriptEntry, error)
 	GetByID(ctx context.Context, id string) (domain.ScriptEntry, error)
 }
+
+type AdminStore interface {
+	ClearAll(ctx context.Context) error
+	RunSeedScripts(ctx context.Context) ([]domain.SeedScriptResult, error)
+}

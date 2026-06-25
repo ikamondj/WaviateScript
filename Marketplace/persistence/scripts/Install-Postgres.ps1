@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "16"
+    [string]$Version = "18.4"
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,11 +15,19 @@ if (Test-Command "psql") {
     exit 0
 }
 
-if (Test-Command "winget") {
-    Write-Host "Postgres was not found. Attempting winget install for PostgreSQL $Version."
-    winget install --id "PostgreSQL.PostgreSQL.$Version" --silent --accept-package-agreements --accept-source-agreements
-    Write-Host "Postgres install requested. Open a new shell if psql is not on PATH yet."
+# Set your desired variables
+$Version = "18.4"
+$DbPassword = "admin"  # <-- Set your password here
+
+if (Get-Command "winget" -ErrorAction SilentlyContinue) {
+    Write-Host "PostgreSQL was not found. Attempting silent install..."
+    
+    # Use --override to pass the master password argument directly to the EDB installer
+    winget install --id "PostgreSQL.PostgreSQL.$Version" --silent --accept-package-agreements --accept-source-agreements --override "--mode unattended --serverpassword `"$DbPassword`""
+    
+    Write-Host "PostgreSQL installation requested with your custom password."
     exit 0
 }
+
 
 throw "Postgres is not installed and winget is unavailable. Install PostgreSQL manually, then rerun initialization."

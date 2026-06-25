@@ -17,3 +17,9 @@ cd Marketplace/persistence
 ```
 
 The schema runner records applied one-time scripts in `schema_migrations` so repeated runs are safe.
+
+## Schema Notes
+
+Tags are normalized into `tags` plus `waviate_script_tags` instead of being stored as an array on `waviate_scripts`. That keeps tag names unique, supports tag rename/merge flows, and allows indexed tag search without rewriting script rows.
+
+Authors are separate from login users: `authors.user_id` points at `marketplace_users`, and OAuth-style identities live in `user_credentials`.

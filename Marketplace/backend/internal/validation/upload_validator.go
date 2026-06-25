@@ -3,21 +3,17 @@ package validation
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/waviate-script/marketplace/backend/internal/domain"
 )
 
-var supportedPayloadFormats = map[string]struct{}{
-	"unknown":    {},
-	"raw":        {},
-	"compressed": {},
-	"encrypted":  {},
-}
+var tagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 func ValidateUpload(request domain.UploadRequest) error {
-	if strings.TrimSpace(request.Title) == "" {
-		return errors.New("title is required")
+	if strings.TrimSpace(request.Name) == "" {
+		return errors.New("name is required")
 	}
 	if strings.TrimSpace(request.AuthorID) == "" {
 		return errors.New("authorId is required")
@@ -25,18 +21,15 @@ func ValidateUpload(request domain.UploadRequest) error {
 	if len(request.Tags) > 12 {
 		return errors.New("uploads can include at most 12 tags")
 	}
-
-	format := strings.TrimSpace(request.PayloadFormat)
-	if format == "" {
-		format = "unknown"
-	}
-	if _, ok := supportedPayloadFormats[format]; !ok {
-		return fmt.Errorf("unsupported payload format %q", request.PayloadFormat)
+	for _, tag := range request.Tags {
+		normalized := strings.TrimSpace(strings.ToLower(tag))
+		if !tagPattern.MatchString(normalized) {
+			return fmt.Errorf("invalid tag %q; use lowercase letters, numbers, and hyphens", tag)
+		}
 	}
 
-	// TODO: Validate actual Waviate script package once raw/compressed/encrypted handling is chosen.
-	if strings.TrimSpace(request.SourceText) == "" {
-		return errors.New("sourceText or packaged script payload is required")
+	if strings.TrimSpace(request.Content) == "" {
+		return errors.New("content is required")
 	}
 
 	return nil

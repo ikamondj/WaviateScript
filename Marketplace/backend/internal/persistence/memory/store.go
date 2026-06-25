@@ -19,17 +19,19 @@ func NewStore() *Store {
 	return &Store{
 		entries: []domain.ScriptEntry{
 			{
-				ID:            "glacial-padfield",
-				Title:         "Glacial Padfield",
-				AuthorID:      "user_phasefold",
-				AuthorHandle:  "phasefold",
-				Summary:       "Slow evolving sample shader for crystalline pads.",
-				Tags:          []string{"pads", "ambient", "sample-shader"},
-				Rating:        4.9,
-				Downloads:     18420,
-				PayloadFormat: "unknown",
-				License:       "MIT",
-				UpdatedAt:     time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC),
+				ID:              "glacial-padfield",
+				Name:            "Glacial Padfield",
+				AuthorID:        "author_phasefold",
+				AuthorName:      "Phase Fold",
+				Description:     "Slow evolving sample shader for crystalline pads.",
+				RatingScore:     4.9,
+				RatingCount:     42,
+				DownloadCount:   18420,
+				RequiresPremium: false,
+				Content:         "sample_process = function(ctx) { return ctx.input; }",
+				Tags:            []string{"pads", "ambient", "sample-shader"},
+				CreatedAt:       time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+				UpdatedAt:       time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC),
 			},
 		},
 	}
@@ -47,7 +49,7 @@ func (store *Store) Search(_ context.Context, query domain.SearchQuery) (domain.
 			continue
 		}
 
-		if user != "" && !strings.Contains(strings.ToLower(entry.AuthorHandle), user) {
+		if user != "" && !strings.Contains(strings.ToLower(entry.AuthorName), user) {
 			continue
 		}
 
@@ -93,18 +95,21 @@ func (store *Store) Search(_ context.Context, query domain.SearchQuery) (domain.
 }
 
 func (store *Store) SaveUpload(_ context.Context, upload domain.UploadRequest) (domain.ScriptEntry, error) {
+	now := time.Now().UTC()
 	entry := domain.ScriptEntry{
-		ID:            fmt.Sprintf("draft-%d", len(store.entries)+1),
-		Title:         upload.Title,
-		AuthorID:      upload.AuthorID,
-		AuthorHandle:  upload.AuthorID,
-		Summary:       upload.Summary,
-		Tags:          upload.Tags,
-		Rating:        0,
-		Downloads:     0,
-		PayloadFormat: upload.PayloadFormat,
-		License:       upload.License,
-		UpdatedAt:     time.Now().UTC(),
+		ID:              fmt.Sprintf("draft-%d", len(store.entries)+1),
+		Name:            upload.Name,
+		AuthorID:        upload.AuthorID,
+		AuthorName:      upload.AuthorID,
+		Description:     upload.Description,
+		RatingScore:     0,
+		RatingCount:     0,
+		DownloadCount:   0,
+		RequiresPremium: upload.RequiresPremium,
+		Content:         upload.Content,
+		Tags:            upload.Tags,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	store.entries = append(store.entries, entry)
@@ -122,10 +127,10 @@ func (store *Store) GetByID(_ context.Context, id string) (domain.ScriptEntry, e
 }
 
 func matchesText(entry domain.ScriptEntry, needle string) bool {
-	if strings.Contains(strings.ToLower(entry.Title), needle) {
+	if strings.Contains(strings.ToLower(entry.Name), needle) {
 		return true
 	}
-	if strings.Contains(strings.ToLower(entry.Summary), needle) {
+	if strings.Contains(strings.ToLower(entry.Description), needle) {
 		return true
 	}
 
@@ -152,11 +157,11 @@ func sortEntries(entries []domain.ScriptEntry, sortBy string) {
 	sort.Slice(entries, func(i, j int) bool {
 		switch sortBy {
 		case "downloads":
-			return entries[i].Downloads > entries[j].Downloads
+			return entries[i].DownloadCount > entries[j].DownloadCount
 		case "updated":
 			return entries[i].UpdatedAt.After(entries[j].UpdatedAt)
 		default:
-			return entries[i].Rating > entries[j].Rating
+			return entries[i].RatingScore > entries[j].RatingScore
 		}
 	})
 }

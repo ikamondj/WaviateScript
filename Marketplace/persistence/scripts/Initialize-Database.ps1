@@ -3,54 +3,117 @@ param(
     [string]$DatabaseName = "waviatescript_marketplace",
     [string]$HostName = "localhost",
     [int]$Port = 5432,
-    [string]$UserName = $env:USERNAME
+    [string]$UserName = "postgres",
+    [string]$Password = "admin"
 )
 
 $ErrorActionPreference = "Stop"
-$Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$SchemaDir = Join-Path $Root "schema/one-time"
 
-function Test-Command {
-    param([Parameter(Mandatory = $true)][string]$Name)
-    return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
-}
+$PreviousPgPassword = $env:PGPASSWORD
+$env:PGPASSWORD = $Password
 
-if (-not (Test-Command "psql")) {
-    & (Join-Path $PSScriptRoot "Install-Postgres.ps1")
-}
+try {
+    $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+    $SchemaDir = Join-Path $Root "schema\one-time"
 
-if (-not (Test-Command "psql")) {
-    throw "psql is still unavailable. Open a new shell or add PostgreSQL bin to PATH."
-}
+    # Change this to 16 if you installed PostgreSQL 16
+    $PgBin = "C:\Program Files\PostgreSQL\18\bin"
 
-$dbExists = & psql -h $HostName -p $Port -U $UserName -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName';"
-if ($dbExists.Trim() -ne "1") {
-    if (-not (Test-Command "createdb")) {
-        throw "Database $DatabaseName does not exist and createdb is unavailable."
+    $Psql = Join-Path $PgBin "psql.exe"
+    $Createdb = Join-Path $PgBin "createdb.exe"
+
+    if (-not (Test-Path $Psql)) {
+        Write-Host "psql not found at $Psql - attempting install..."
+        & (Join-Path $PSScriptRoot "Install-Postgres.ps1")
     }
 
-    Write-Host "Creating database $DatabaseName."
-    & createdb -h $HostName -p $Port -U $UserName $DatabaseName
-}
+    if (-not (Test-Path $Psql)) {
+        throw "psql is still unavailable at $Psql. Verify PostgreSQL is installed."
+    }
 
-& psql -h $HostName -p $Port -U $UserName -d $DatabaseName -v ON_ERROR_STOP=1 -c @"
+    if (-not (Test-Path $SchemaDir)) {
+        throw "Schema directory not found: $SchemaDir"
+    }
+
+    $DatabaseNameSql = $DatabaseName.Replace("'", "''")
+
+    $dbExists = & $Psql `
+        -h $HostName `
+        -p $Port `
+        -U $UserName `
+        -d postgres `
+        -tAc "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_database WHERE datname = '$DatabaseNameSql') THEN 1 ELSE 0 END;"
+
+    $dbExistsText = if ($null -eq $dbExists) { "" } else { $dbExists.ToString().Trim() }
+
+    if ($dbExistsText -ne "1") {
+        if (-not (Test-Path $Createdb)) {
+            throw "Database $DatabaseName does not exist and createdb is unavailable at $Createdb."
+        }
+
+        Write-Host "Creating database $DatabaseName."
+
+        & $Createdb `
+            -h $HostName `
+            -p $Port `
+            -U $UserName `
+            $DatabaseName
+    }
+
+    $CreateMigrationsTableSql = @"
 CREATE TABLE IF NOT EXISTS schema_migrations (
     filename text PRIMARY KEY,
     applied_at timestamptz NOT NULL DEFAULT now()
 );
 "@
 
-Get-ChildItem -Path $SchemaDir -Filter "*.sql" | Sort-Object Name | ForEach-Object {
-    $script = $_
-    $applied = & psql -h $HostName -p $Port -U $UserName -d $DatabaseName -tAc "SELECT 1 FROM schema_migrations WHERE filename = '$($script.Name)';"
+    & $Psql `
+        -h $HostName `
+        -p $Port `
+        -U $UserName `
+        -d $DatabaseName `
+        -v ON_ERROR_STOP=1 `
+        -c $CreateMigrationsTableSql
 
-    if ($applied.Trim() -eq "1") {
-        Write-Host "Skipping already applied script $($script.Name)."
-    } else {
-        Write-Host "Applying schema script $($script.Name)."
-        & psql -h $HostName -p $Port -U $UserName -d $DatabaseName -v ON_ERROR_STOP=1 -f $script.FullName
-        & psql -h $HostName -p $Port -U $UserName -d $DatabaseName -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations (filename) VALUES ('$($script.Name)');"
+    Get-ChildItem -Path $SchemaDir -Filter "*.sql" | Sort-Object Name | ForEach-Object {
+        $script = $_
+        $ScriptNameSql = $script.Name.Replace("'", "''")
+
+        $applied = & $Psql `
+            -h $HostName `
+            -p $Port `
+            -U $UserName `
+            -d $DatabaseName `
+            -tAc "SELECT CASE WHEN EXISTS (SELECT 1 FROM schema_migrations WHERE filename = '$ScriptNameSql') THEN 1 ELSE 0 END;"
+
+        $appliedText = if ($null -eq $applied) { "" } else { $applied.ToString().Trim() }
+
+        if ($appliedText -eq "1") {
+            Write-Host "Skipping already applied script $($script.Name)."
+        }
+        else {
+            Write-Host "Applying schema script $($script.Name)."
+
+            & $Psql `
+                -h $HostName `
+                -p $Port `
+                -U $UserName `
+                -d $DatabaseName `
+                -v ON_ERROR_STOP=1 `
+                -f $script.FullName
+
+            & $Psql `
+                -h $HostName `
+                -p $Port `
+                -U $UserName `
+                -d $DatabaseName `
+                -v ON_ERROR_STOP=1 `
+                -c "INSERT INTO schema_migrations (filename) VALUES ('$ScriptNameSql');"
+        }
     }
-}
 
-Write-Host "Marketplace database initialization complete."
+    Write-Host "Marketplace database initialization complete."
+}
+finally {
+    $env:PGPASSWORD = $PreviousPgPassword
+}

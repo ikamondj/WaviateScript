@@ -1,4 +1,6 @@
-export const mockEntries = [
+import { ref } from 'vue';
+
+const fallbackEntries = [
   {
     id: 'glacial-padfield',
     title: 'Glacial Padfield',
@@ -67,8 +69,266 @@ export const mockEntries = [
   },
 ];
 
+const backendModes = new Set(['loc', 'local']);
+const defaultPageSize = 20;
+let activeLoad = 0;
+
+export const mockEntries = ref([]);
+export const marketplacePage = ref(createPageInfo(1, defaultPageSize, 0));
+export const marketplaceLoading = ref(false);
+export const marketplaceError = ref('');
+export const marketplaceDataSource = ref('fallback');
+export const marketplaceTags = ref(usesMarketplaceBackend() ? [] : collectTags(fallbackEntries));
+
 export const sortOptions = [
   { value: 'rating', label: 'Top Rated' },
   { value: 'downloads', label: 'Most Downloaded' },
   { value: 'updated', label: 'Recently Updated' },
 ];
+
+export function usesMarketplaceBackend() {
+  return backendModes.has(import.meta.env.MODE);
+}
+
+export async function loadMarketplaceEntries(options = {}) {
+  const loadId = ++activeLoad;
+  const searchOptions = normalizeOptions(options);
+
+  marketplaceLoading.value = true;
+  marketplaceError.value = '';
+
+  try {
+    if (usesMarketplaceBackend()) {
+      const result = await loadBackendEntries(searchOptions);
+      if (loadId !== activeLoad) {
+        return null;
+      }
+
+      applyResult(result, 'backend', loadId);
+      return result;
+    }
+  } catch (err) {
+    if (loadId === activeLoad) {
+      console.warn('Failed to fetch marketplace entries from backend, falling back to bundled data.', err);
+      marketplaceError.value = 'Could not reach the marketplace backend. Showing bundled sample data.';
+    }
+  } finally {
+    if (loadId === activeLoad) {
+      marketplaceLoading.value = false;
+    }
+  }
+
+  const fallbackResult = searchFallbackEntries(searchOptions);
+  if (loadId !== activeLoad) {
+    return null;
+  }
+
+  applyResult(fallbackResult, 'fallback', loadId);
+  return fallbackResult;
+}
+
+async function loadBackendEntries(options) {
+  const needsClientTagFiltering = options.includedTags.length > 1 || options.excludedTags.length > 0;
+  const requestOptions = {
+    ...options,
+    page: needsClientTagFiltering ? 1 : options.page,
+    pageSize: needsClientTagFiltering ? 500 : options.pageSize,
+  };
+
+  const params = new URLSearchParams();
+  params.set('page', String(requestOptions.page));
+  params.set('pageSize', String(requestOptions.pageSize));
+  params.set('sort', requestOptions.sort);
+
+  if (requestOptions.query) {
+    params.set('q', requestOptions.query);
+  }
+
+  if (requestOptions.user) {
+    params.set('user', requestOptions.user);
+  }
+
+  if (requestOptions.includedTags[0]) {
+    params.set('tag', requestOptions.includedTags[0]);
+  }
+
+  const response = await fetch(`/api/search?${params.toString()}`, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Marketplace search failed with HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const entries = (data.entries || []).map(mapBackendEntry);
+
+  if (needsClientTagFiltering) {
+    return paginateEntries(
+      filterEntriesByTags(entries, options.includedTags, options.excludedTags),
+      options,
+    );
+  }
+
+  return {
+    entries,
+    page: normalizePage(data.page, options, entries.length),
+  };
+}
+
+function searchFallbackEntries(options) {
+  const loweredQuery = options.query.toLowerCase();
+  const loweredUser = options.user.toLowerCase();
+  const filteredEntries = fallbackEntries.filter((entry) => {
+    const matchesQuery =
+      !loweredQuery ||
+      entry.title.toLowerCase().includes(loweredQuery) ||
+      entry.summary.toLowerCase().includes(loweredQuery) ||
+      entry.tags.some((entryTag) => entryTag.toLowerCase().includes(loweredQuery));
+    const matchesUser = !loweredUser || entry.author.toLowerCase().includes(loweredUser);
+
+    return (
+      matchesQuery &&
+      matchesUser &&
+      filterEntriesByTags([entry], options.includedTags, options.excludedTags).length === 1
+    );
+  });
+
+  return paginateEntries(sortEntries(filteredEntries, options.sort), options);
+}
+
+function applyResult(result, source, loadId) {
+  if (loadId !== activeLoad) {
+    return;
+  }
+
+  mockEntries.value = result.entries;
+  marketplacePage.value = result.page;
+  marketplaceDataSource.value = source;
+  marketplaceTags.value = source === 'fallback' ? collectTags(fallbackEntries) : mergeTags(result.entries);
+}
+
+function normalizeOptions(options) {
+  return {
+    query: String(options.query || '').trim(),
+    user: String(options.user || '').trim(),
+    includedTags: normalizeTags(options.includedTags || options.tags || (options.tag ? [options.tag] : [])),
+    excludedTags: normalizeTags(options.excludedTags || []),
+    sort: options.sort || 'rating',
+    page: normalizePositiveInt(options.page, 1),
+    pageSize: normalizePositiveInt(options.pageSize, defaultPageSize),
+  };
+}
+
+function normalizeTags(tags) {
+  return tags.map((tag) => String(tag).trim()).filter(Boolean);
+}
+
+function normalizePositiveInt(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function mapBackendEntry(entry) {
+  return {
+    id: entry.id,
+    title: entry.name || 'Untitled Script',
+    author: entry.authorName || entry.authorId || 'unknown',
+    summary: entry.description || '',
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    rating: Number(entry.ratingScore || 0),
+    ratingCount: Number(entry.ratingCount || 0),
+    downloads: Number(entry.downloadCount || 0),
+    updated: formatDate(entry.updatedAt || entry.createdAt),
+    format: 'waviate',
+    requiresPremium: Boolean(entry.requiresPremium),
+    content: entry.content || '',
+  };
+}
+
+function formatDate(value) {
+  if (!value) {
+    return 'unknown';
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return String(value).split('T')[0] || 'unknown';
+}
+
+function filterEntriesByTags(entries, includedTags, excludedTags) {
+  return entries.filter((entry) => {
+    const entryTags = new Set(entry.tags);
+    return (
+      includedTags.every((entryTag) => entryTags.has(entryTag)) &&
+      excludedTags.every((entryTag) => !entryTags.has(entryTag))
+    );
+  });
+}
+
+function sortEntries(entries, sortBy) {
+  return [...entries].sort((left, right) => {
+    if (sortBy === 'downloads') {
+      return right.downloads - left.downloads;
+    }
+
+    if (sortBy === 'updated') {
+      return new Date(right.updated) - new Date(left.updated);
+    }
+
+    return right.rating - left.rating;
+  });
+}
+
+function paginateEntries(entries, options) {
+  const pageSize = normalizePositiveInt(options.pageSize, defaultPageSize);
+  const total = entries.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(normalizePositiveInt(options.page, 1), totalPages);
+  const offset = (page - 1) * pageSize;
+
+  return {
+    entries: entries.slice(offset, offset + pageSize),
+    page: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+    },
+  };
+}
+
+function normalizePage(page, options, entryCount) {
+  return {
+    page: normalizePositiveInt(page?.page, options.page),
+    pageSize: normalizePositiveInt(page?.pageSize, options.pageSize),
+    total: normalizePositiveInt(page?.total, entryCount),
+    totalPages: normalizePositiveInt(page?.totalPages, 1),
+  };
+}
+
+function createPageInfo(page, pageSize, total) {
+  return {
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+function collectTags(entries) {
+  return [...new Set(entries.flatMap((entry) => entry.tags))].sort();
+}
+
+function mergeTags(entries) {
+  return [...new Set([...marketplaceTags.value, ...entries.flatMap((entry) => entry.tags)])].sort();
+}
