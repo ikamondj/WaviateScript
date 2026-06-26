@@ -309,3 +309,122 @@ float SampleProcess(const WaviateSample& wav)
         waviate::safety::resetFallbackFuelState();
     }
 }
+
+WAVIATE_TEST_CASE(CompilePipelineArenaFacadeTest, "Compile Pipeline Arena Facade", "Compile")
+{
+    using namespace waviate::tests::compile;
+
+    WAVIATE_TEST("waviate facade containers allocate through the ephemeral arena");
+    const auto arenaResult = compileSource("arena_facade", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto values = wav.newArray<float>(4);
+    values.set(0, 1.25f);
+    values.set(1, 0.75f);
+
+    auto numbers = wav.newVector<float>();
+    numbers.push(values.get(0));
+    numbers.push(values.get(1));
+
+    auto name = wav.newString("wa");
+    name.append('v');
+
+    auto gains = wav.newMap<int, float>();
+    gains.insert(7, numbers.get(0) + numbers.get(1));
+
+    return gains.get(7, 0.0f) + static_cast<float>(name.size());
+}
+)wlsl");
+    expectCompileSuccess(*this, arenaResult);
+    if (arenaResult)
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(arenaResult), 5.0f));
+
+    WAVIATE_TEST("arena exhaustion traps and returns fallback output");
+    const auto exhaustedResult = compileSource("arena_exhaustion", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto tooLarge = wav.newArray<float>(40000000);
+    return tooLarge.valid() ? 1.0f : 2.0f;
+}
+)wlsl");
+    expectCompileSuccess(*this, exhaustedResult);
+    if (exhaustedResult)
+    {
+        exhaustedResult.runtime.beginBlock(1000000);
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(exhaustedResult), 0.0f));
+        WAVIATE_EXPECT(exhaustedResult.runtime.isFuelExhausted());
+        waviate::safety::resetFallbackFuelState();
+    }
+}
+
+WAVIATE_TEST_CASE(CompilePipelineSafetyRejectionTest, "Compile Pipeline Safety Rejection", "Compile")
+{
+    using namespace waviate::tests::compile;
+
+    WAVIATE_TEST("unallowlisted external symbols are rejected even with harmless names");
+    const auto externalResult = compileSource("unsafe_external_symbol", R"wlsl(
+extern "C" float host_escape();
+
+float SampleProcess(const WaviateSample& wav)
+{
+    return host_escape();
+}
+)wlsl");
+    expectCompileFailure(*this, externalResult, "external function");
+
+    WAVIATE_TEST("inline assembly is rejected");
+    const auto asmResult = compileSource("unsafe_inline_asm", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    asm volatile("");
+    return 0.0f;
+}
+)wlsl");
+    expectCompileFailure(*this, asmResult, "asm");
+
+    WAVIATE_TEST("arbitrary function pointer address calls are rejected");
+    const auto pointerResult = compileSource("unsafe_function_pointer_address", R"wlsl(
+using HostCall = float (*)();
+
+float SampleProcess(const WaviateSample& wav)
+{
+    HostCall call = (HostCall)0x12345678ULL;
+    return call();
+}
+)wlsl");
+    expectCompileFailure(*this, pointerResult, "function-pointer");
+
+    WAVIATE_TEST("raw allocation syntax is rejected");
+    const auto allocationResult = compileSource("unsafe_raw_new", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    int* value = new int(3);
+    return static_cast<float>(*value);
+}
+)wlsl");
+    expectCompileFailure(*this, allocationResult, "new");
+
+    WAVIATE_TEST("mutable global storage is rejected");
+    const auto globalResult = compileSource("unsafe_mutable_global", R"wlsl(
+float persistent = 1.0f;
+
+float SampleProcess(const WaviateSample& wav)
+{
+    persistent += 1.0f;
+    return persistent;
+}
+)wlsl");
+    expectCompileFailure(*this, globalResult, "global");
+
+    WAVIATE_TEST("dynamic stack allocation is rejected");
+    const auto stackResult = compileSource("unsafe_dynamic_stack", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    int count = wav.getBlockSize();
+    float values[count];
+    values[0] = 1.0f;
+    return values[0];
+}
+)wlsl");
+    expectCompileFailure(*this, stackResult, "stack");
+}

@@ -308,8 +308,14 @@ WaviateScriptAudioProcessor::compileAndActivateSource(const juce::String& extens
 
         if (compiled.hasEntryPoints())
         {
+            storeRuntimeControls(compiled.runtime);
+            scriptOverBudget.store(false, std::memory_order_release);
             activeSampleShader.store(compiled.sampleShader, std::memory_order_release);
             activeFrequencyShader.store(compiled.frequencyShader, std::memory_order_release);
+        }
+        else
+        {
+            deactivateActiveScript(false);
         }
     }
     catch (const std::exception& e)
@@ -642,6 +648,17 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // ----- SampleWise Processing (segment) -----
     SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
     if (sampleShader) {
+        const auto runtime = loadRuntimeControls();
+        if (runtime.hasFuelMetering())
+        {
+            runtime.beginBlock(waviate::compile::calculateFuelBudget(
+                getFuelLimitPreset(),
+                blockNumSamples,
+                mainOutputCh));
+        }
+
+        bool scriptTrapped = false;
+
         for (int samp = 0; samp < blockNumSamples; ++samp)
         {
             const uint64_t absoluteSample = samplesSinceAppStart + static_cast<uint64_t>(samp);
@@ -667,10 +684,31 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             for (int ch = 0; ch < mainOutputCh; ++ch)
             {
                 wavInput->channel = static_cast<uint8_t>(ch);
-                mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
+                {
+                    waviate::safety::ScopedArenaPass arenaPass(shaderArena);
+                    mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
+                }
+
+                if (runtime.isFuelExhausted())
+                {
+                    scriptTrapped = true;
+                    break;
+                }
             }
 
             sampleMidiMessages.clear();
+
+            if (scriptTrapped)
+                break;
+        }
+
+        if (scriptTrapped)
+        {
+            mainOut.clear();
+            deactivateActiveScript(true);
+            samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
+            pushVisualizerSamples();
+            return;
         }
     }
 
@@ -804,6 +842,30 @@ waviate::compile::FuelLimitPreset WaviateScriptAudioProcessor::getFuelLimitPrese
 bool WaviateScriptAudioProcessor::isScriptOverBudget() const noexcept
 {
     return scriptOverBudget.load(std::memory_order_relaxed);
+}
+
+void WaviateScriptAudioProcessor::storeRuntimeControls(const ShaderRuntimeControls& runtime) noexcept
+{
+    activeSetFuelBudget.store(runtime.setFuelBudget, std::memory_order_release);
+    activeGetFuelRemaining.store(runtime.getFuelRemaining, std::memory_order_release);
+    activeGetFuelExhausted.store(runtime.getFuelExhausted, std::memory_order_release);
+}
+
+ShaderRuntimeControls WaviateScriptAudioProcessor::loadRuntimeControls() const noexcept
+{
+    ShaderRuntimeControls runtime;
+    runtime.setFuelBudget = activeSetFuelBudget.load(std::memory_order_acquire);
+    runtime.getFuelRemaining = activeGetFuelRemaining.load(std::memory_order_acquire);
+    runtime.getFuelExhausted = activeGetFuelExhausted.load(std::memory_order_acquire);
+    return runtime;
+}
+
+void WaviateScriptAudioProcessor::deactivateActiveScript(bool markOverBudget) noexcept
+{
+    activeSampleShader.store(nullptr, std::memory_order_release);
+    activeFrequencyShader.store(nullptr, std::memory_order_release);
+    storeRuntimeControls({});
+    scriptOverBudget.store(markOverBudget, std::memory_order_release);
 }
 
 //==============================================================================

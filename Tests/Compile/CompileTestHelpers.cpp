@@ -174,7 +174,18 @@ SampleExecutionResult executeSample(const CompileResult& result, const SampleInv
 
     SampleExecutionResult executionResult;
     waviate::audio::ScopedAudioCacheBinding audioCacheBinding(invocation.audioCache);
-    executionResult.returnValue = result.sampleShader(&input, nullptr);
+    static thread_local waviate::safety::EphemeralArena arena;
+    {
+        waviate::safety::ScopedArenaPass arenaPass(arena);
+        executionResult.returnValue = result.sampleShader(&input, nullptr);
+    }
+
+    if (result.runtime.isFuelExhausted())
+    {
+        executionResult.returnValue = 0.0f;
+        outputStorage[static_cast<size_t>(channelIndex)][static_cast<size_t>(sampleIndex)] = 0.0f;
+    }
+
     executionResult.selectedOutputSample = outputStorage[static_cast<size_t>(channelIndex)][static_cast<size_t>(sampleIndex)];
     executionResult.outputChannels = std::move(outputStorage);
     return executionResult;

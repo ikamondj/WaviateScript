@@ -25,11 +25,40 @@ constexpr uint64_t maxFunctionStaticAllocaBytes = 16384;
 
 bool isAllowedExternalFunction (llvm::StringRef name)
 {
-    return name == "waviate_consume_fuel"
+    static constexpr llvm::StringLiteral pureMathFunctions[] = {
+        "acos", "acosf", "asin", "asinf", "atan", "atanf", "atan2", "atan2f",
+        "cos", "cosf", "sin", "sinf", "tan", "tanf",
+        "acosh", "acoshf", "asinh", "asinhf", "atanh", "atanhf",
+        "cosh", "coshf", "sinh", "sinhf", "tanh", "tanhf",
+        "exp", "expf", "exp2", "exp2f", "expm1", "expm1f",
+        "frexp", "frexpf", "ilogb", "ilogbf", "ldexp", "ldexpf",
+        "log", "logf", "log10", "log10f", "log1p", "log1pf", "log2", "log2f",
+        "logb", "logbf", "modf", "modff", "scalbn", "scalbnf", "scalbln", "scalblnf",
+        "cbrt", "cbrtf", "fabs", "fabsf", "hypot", "hypotf", "pow", "powf",
+        "sqrt", "sqrtf", "erf", "erff", "erfc", "erfcf", "lgamma", "lgammaf",
+        "tgamma", "tgammaf", "ceil", "ceilf", "floor", "floorf",
+        "nearbyint", "nearbyintf", "rint", "rintf", "lrint", "lrintf",
+        "llrint", "llrintf", "round", "roundf", "lround", "lroundf",
+        "llround", "llroundf", "trunc", "truncf", "fmod", "fmodf",
+        "remainder", "remainderf", "remquo", "remquof", "copysign", "copysignf",
+        "nan", "nanf", "nextafter", "nextafterf", "nexttoward", "nexttowardf",
+        "fmax", "fmaxf", "fmin", "fminf", "fdim", "fdimf", "fma", "fmaf"
+    };
+
+    if (name == "waviate_consume_fuel"
         || name == "waviate_fuel_trap"
         || name == "__waviate_internal_arena_allocate"
         || name == "__waviate_internal_arena_generation"
-        || name == "waviate_load_audio_from_location";
+        || name == "waviate_load_audio_from_location")
+    {
+        return true;
+    }
+
+    for (const auto allowed : pureMathFunctions)
+        if (name == allowed)
+            return true;
+
+    return false;
 }
 
 void addDiagnostic (std::ostringstream& diagnostics, const std::string& message)

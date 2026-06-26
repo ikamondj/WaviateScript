@@ -80,6 +80,10 @@ const std::vector<FunctionSymbol>& waviateCoreMemberFunctions()
         function("voronoi", "float", { param("float", "x"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Voronoi noise."),
         function("turbulence", "float", { param("float", "x"), param("int", "octaves", "4"), param("float", "lacunarity", "2.0f"), param("float", "gain", "0.5f"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Turbulence noise."),
         function("ridgedMulti", "float", { param("float", "x"), param("int", "octaves", "4"), param("float", "lacunarity", "2.0f"), param("float", "gain", "0.5f"), param("float", "min", "0.0f"), param("float", "max", "1.0f") }, SymbolKind::Method, "Ridged multifractal noise."),
+        function("newArray", "WaviateArray<T>", { param("size_t", "size") }, SymbolKind::Method, "Allocate a temporary arena-backed array for the current shader pass."),
+        function("newVector", "WaviateVector<T>", { param("size_t", "initialCapacity", "0") }, SymbolKind::Method, "Allocate a temporary arena-backed vector for the current shader pass."),
+        function("newString", "WaviateString", {}, SymbolKind::Method, "Allocate a temporary arena-backed string for the current shader pass."),
+        function("newMap", "WaviateMap<K,V>", { param("size_t", "initialCapacity", "0") }, SymbolKind::Method, "Allocate a temporary arena-backed linear map for the current shader pass."),
     };
 
     return symbols;
@@ -389,6 +393,10 @@ const std::vector<FieldSymbol>& cppBuiltinTypes()
         classSymbol("WaviateFrequencyInput", "Frequency input data passed to the C ABI."),
         classSymbol("WaviateFrequencyStateWriter", "Frequency state writer."),
         classSymbol("WaviateComplex", "Complex number with real and imaginary fields."),
+        classSymbol("WaviateArray", "Temporary arena-backed array wrapper."),
+        classSymbol("WaviateVector", "Temporary arena-backed vector wrapper."),
+        classSymbol("WaviateString", "Temporary arena-backed string wrapper."),
+        classSymbol("WaviateMap", "Temporary arena-backed map wrapper."),
         typeSymbol("void"),
         typeSymbol("auto"),
         typeSymbol("bool"),
@@ -400,6 +408,7 @@ const std::vector<FieldSymbol>& cppBuiltinTypes()
         typeSymbol("uint8_t"),
         typeSymbol("uint32_t"),
         typeSymbol("uint64_t"),
+        typeSymbol("size_t"),
     };
 
     return symbols;
@@ -465,6 +474,7 @@ using uint8_t = unsigned char;
 using int32_t = int;
 using uint32_t = unsigned int;
 using uint64_t = unsigned long long;
+using size_t = __SIZE_TYPE__;
 
 struct WaviateSampleInput {
     uint64_t samplesSinceAppStart;
@@ -975,6 +985,346 @@ inline auto loadAudio(const StringLike& fileLocation) -> decltype(fileLocation.c
     return loadAudio(fileLocation.c_str());
 }
 
+)waviate_cpp_api");
+    api.append(R"waviate_cpp_api(
+extern "C" void waviate_fuel_trap() noexcept;
+extern "C" void* __waviate_internal_arena_allocate(uint64_t sizeBytes, uint64_t alignmentBytes) noexcept;
+extern "C" uint64_t __waviate_internal_arena_generation() noexcept;
+
+namespace waviate_detail {
+    inline size_t maxSize() {
+        return static_cast<size_t>(~static_cast<size_t>(0));
+    }
+
+    inline bool multiplyWouldOverflow(size_t a, size_t b) {
+        return a != 0 && b > maxSize() / a;
+    }
+
+    inline void trapArenaFailure() {
+        waviate_fuel_trap();
+    }
+
+    template <typename T>
+    inline T* arenaAllocate(size_t count) {
+        static_assert(__is_trivially_destructible(T),
+                      "Waviate arena containers only support trivially destructible values");
+
+        if (count == 0)
+            return nullptr;
+
+        if (multiplyWouldOverflow(count, sizeof(T))) {
+            trapArenaFailure();
+            return nullptr;
+        }
+
+        return static_cast<T*>(__waviate_internal_arena_allocate(
+            static_cast<uint64_t>(count * sizeof(T)),
+            static_cast<uint64_t>(alignof(T))));
+    }
+
+    inline uint64_t arenaGeneration() {
+        return __waviate_internal_arena_generation();
+    }
+}
+
+template <typename T>
+class WaviateArray {
+public:
+    static WaviateArray create(size_t sizeIn) {
+        WaviateArray result;
+        result.items = waviate_detail::arenaAllocate<T>(sizeIn);
+        result.allocationOk = sizeIn == 0 || result.items != nullptr;
+        result.count = result.allocationOk ? sizeIn : 0;
+        result.generation = waviate_detail::arenaGeneration();
+        return result;
+    }
+
+    size_t size() const { return isCurrentPass() ? count : 0; }
+    bool empty() const { return size() == 0; }
+    bool valid() const { return isCurrentPass() && allocationOk; }
+
+    T get(size_t index, T fallback = T{}) const {
+        return valid() && index < count ? items[index] : fallback;
+    }
+
+    bool set(size_t index, T value) {
+        if (!valid() || index >= count) {
+            waviate_detail::trapArenaFailure();
+            return false;
+        }
+
+        items[index] = value;
+        return true;
+    }
+
+private:
+    bool isCurrentPass() const { return generation == waviate_detail::arenaGeneration(); }
+
+    T* items = nullptr;
+    size_t count = 0;
+    uint64_t generation = 0;
+    bool allocationOk = true;
+};
+
+template <typename T>
+class WaviateVector {
+public:
+    static WaviateVector create(size_t initialCapacity) {
+        WaviateVector result;
+        result.generation = waviate_detail::arenaGeneration();
+        if (initialCapacity > 0)
+            result.reserve(initialCapacity);
+        return result;
+    }
+
+    size_t size() const { return isCurrentPass() ? count : 0; }
+    size_t capacity() const { return isCurrentPass() ? reserved : 0; }
+    bool empty() const { return size() == 0; }
+    bool valid() const { return isCurrentPass(); }
+
+    bool reserve(size_t minCapacity) {
+        if (!isCurrentPass()) {
+            waviate_detail::trapArenaFailure();
+            return false;
+        }
+
+        if (minCapacity <= reserved)
+            return true;
+
+        T* next = waviate_detail::arenaAllocate<T>(minCapacity);
+        if (next == nullptr && minCapacity > 0)
+            return false;
+
+        for (size_t i = 0; i < count; ++i)
+            next[i] = items[i];
+
+        items = next;
+        reserved = minCapacity;
+        return true;
+    }
+
+    bool push(T value) {
+        if (count == reserved) {
+            const size_t nextCapacity = reserved == 0 ? 8 : reserved * 2;
+            if (nextCapacity < reserved || !reserve(nextCapacity))
+                return false;
+        }
+
+        items[count++] = value;
+        return true;
+    }
+
+    T get(size_t index, T fallback = T{}) const {
+        return valid() && index < count ? items[index] : fallback;
+    }
+
+    bool set(size_t index, T value) {
+        if (!valid() || index >= count) {
+            waviate_detail::trapArenaFailure();
+            return false;
+        }
+
+        items[index] = value;
+        return true;
+    }
+
+private:
+    bool isCurrentPass() const { return generation == waviate_detail::arenaGeneration(); }
+
+    T* items = nullptr;
+    size_t count = 0;
+    size_t reserved = 0;
+    uint64_t generation = 0;
+};
+
+)waviate_cpp_api");
+    api.append(R"waviate_cpp_api(
+class WaviateString {
+public:
+    static WaviateString create() {
+        WaviateString result;
+        result.generation = waviate_detail::arenaGeneration();
+        return result;
+    }
+
+    static WaviateString create(const char* text) {
+        WaviateString result = create();
+        result.append(text);
+        return result;
+    }
+
+    size_t size() const { return isCurrentPass() ? count : 0; }
+    bool empty() const { return size() == 0; }
+    bool valid() const { return isCurrentPass(); }
+    const char* c_str() const { return valid() && chars != nullptr ? chars : ""; }
+
+    char get(size_t index, char fallback = '\0') const {
+        return valid() && index < count ? chars[index] : fallback;
+    }
+
+    bool reserve(size_t minCapacity) {
+        if (!isCurrentPass()) {
+            waviate_detail::trapArenaFailure();
+            return false;
+        }
+
+        if (minCapacity <= reserved)
+            return true;
+
+        if (minCapacity == waviate_detail::maxSize()) {
+            waviate_detail::trapArenaFailure();
+            return false;
+        }
+
+        char* next = waviate_detail::arenaAllocate<char>(minCapacity + 1);
+        if (next == nullptr)
+            return false;
+
+        for (size_t i = 0; i < count; ++i)
+            next[i] = chars[i];
+
+        next[count] = '\0';
+        chars = next;
+        reserved = minCapacity;
+        return true;
+    }
+
+    bool append(char value) {
+        if (count == reserved) {
+            const size_t nextCapacity = reserved == 0 ? 16 : reserved * 2;
+            if (nextCapacity < reserved || !reserve(nextCapacity))
+                return false;
+        }
+
+        chars[count++] = value;
+        chars[count] = '\0';
+        return true;
+    }
+
+    bool append(const char* text) {
+        if (text == nullptr)
+            return true;
+
+        for (size_t i = 0; text[i] != '\0'; ++i)
+            if (!append(text[i]))
+                return false;
+
+        return true;
+    }
+
+private:
+    bool isCurrentPass() const { return generation == waviate_detail::arenaGeneration(); }
+
+    char* chars = nullptr;
+    size_t count = 0;
+    size_t reserved = 0;
+    uint64_t generation = 0;
+};
+
+template <typename K, typename V>
+class WaviateMap {
+private:
+    struct Entry {
+        K key;
+        V value;
+        uint8_t used;
+    };
+
+public:
+    static WaviateMap create(size_t initialCapacity) {
+        static_assert(__is_trivially_destructible(K),
+                      "Waviate arena maps only support trivially destructible keys");
+        static_assert(__is_trivially_destructible(V),
+                      "Waviate arena maps only support trivially destructible values");
+
+        WaviateMap result;
+        result.generation = waviate_detail::arenaGeneration();
+        if (initialCapacity > 0)
+            result.reserve(initialCapacity);
+        return result;
+    }
+
+    size_t size() const { return isCurrentPass() ? count : 0; }
+    size_t capacity() const { return isCurrentPass() ? reserved : 0; }
+    bool valid() const { return isCurrentPass(); }
+
+    bool reserve(size_t minCapacity) {
+        if (!isCurrentPass()) {
+            waviate_detail::trapArenaFailure();
+            return false;
+        }
+
+        if (minCapacity <= reserved)
+            return true;
+
+        Entry* next = waviate_detail::arenaAllocate<Entry>(minCapacity);
+        if (next == nullptr && minCapacity > 0)
+            return false;
+
+        for (size_t i = 0; i < count; ++i)
+            next[i] = entries[i];
+
+        entries = next;
+        reserved = minCapacity;
+        return true;
+    }
+
+    bool insert(K key, V value) {
+        if (!isCurrentPass()) {
+            waviate_detail::trapArenaFailure();
+            return false;
+        }
+
+        for (size_t i = 0; i < count; ++i) {
+            if (entries[i].used != 0 && entries[i].key == key) {
+                entries[i].value = value;
+                return true;
+            }
+        }
+
+        if (count == reserved) {
+            const size_t nextCapacity = reserved == 0 ? 8 : reserved * 2;
+            if (nextCapacity < reserved || !reserve(nextCapacity))
+                return false;
+        }
+
+        entries[count++] = Entry { key, value, 1 };
+        return true;
+    }
+
+    bool contains(K key) const {
+        if (!isCurrentPass())
+            return false;
+
+        for (size_t i = 0; i < count; ++i)
+            if (entries[i].used != 0 && entries[i].key == key)
+                return true;
+
+        return false;
+    }
+
+    V get(K key, V fallback = V{}) const {
+        if (!isCurrentPass())
+            return fallback;
+
+        for (size_t i = 0; i < count; ++i)
+            if (entries[i].used != 0 && entries[i].key == key)
+                return entries[i].value;
+
+        return fallback;
+    }
+
+private:
+    bool isCurrentPass() const { return generation == waviate_detail::arenaGeneration(); }
+
+    Entry* entries = nullptr;
+    size_t count = 0;
+    size_t reserved = 0;
+    uint64_t generation = 0;
+};
+
+)waviate_cpp_api");
+    api.append(R"waviate_cpp_api(
 class WaviateCore {
 public:
     float getSeconds() const { return samplesToSeconds(coreSamplesSinceAppStart); }
@@ -988,6 +1338,18 @@ public:
     }
     float sampleRateHz() const { return coreSampleRate; }
     float sampleRateKHz() const { return coreSampleRate * 0.001f; }
+
+    template <typename T>
+    WaviateArray<T> newArray(size_t size) const { return WaviateArray<T>::create(size); }
+
+    template <typename T>
+    WaviateVector<T> newVector(size_t initialCapacity = 0) const { return WaviateVector<T>::create(initialCapacity); }
+
+    WaviateString newString() const { return WaviateString::create(); }
+    WaviateString newString(const char* text) const { return WaviateString::create(text); }
+
+    template <typename K, typename V>
+    WaviateMap<K, V> newMap(size_t initialCapacity = 0) const { return WaviateMap<K, V>::create(initialCapacity); }
 
     float adsr(float attack, float decay, float sustain, float release, float t) const {
         const float a = waviate_detail::maxValue(0.0f, attack);

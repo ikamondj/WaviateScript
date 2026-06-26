@@ -447,7 +447,8 @@ void ClangCompiler<cppMode>::configureInvocation(std::shared_ptr<clang::Compiler
         cppMode ? clang::LangStandard::lang_cxx23 : clang::LangStandard::lang_c17);
 
     auto& cg = inv->getCodeGenOpts();
-    cg.OptimizationLevel = 2;
+    cg.OptimizationLevel = 0;
+    cg.DisableLLVMPasses = true;
 
     auto& hs = inv->getHeaderSearchOpts();
     hs.UseBuiltinIncludes = true;

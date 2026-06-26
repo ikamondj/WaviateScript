@@ -13,6 +13,7 @@
 #include "AbstractCompiler.h"
 #include "CompilePipeline.h"
 #include "WaviateAudio.h"
+#include "WaviateSafety.h"
 #include <array>
 #include <atomic>
 
@@ -137,6 +138,7 @@ private:
     std::atomic<ShaderGetFuelExhaustedFn> activeGetFuelExhausted { nullptr };
     waviate::audio::WaviateAudioCache audioCache;
     waviate::compile::Pipeline compilePipeline;
+    waviate::safety::EphemeralArena shaderArena;
     std::vector<ManualClipInfo> manualClips;
 
     class AudioLoaderThread;
