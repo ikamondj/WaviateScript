@@ -68,6 +68,29 @@ float SampleProcess(const WaviateSample& wav)
     expectCompileSuccess(*this, timingResult);
     if (timingResult)
         WAVIATE_EXPECT(nearlyEqual(invokeSample(timingResult, { .sampleRate = 48000.0f }), 24000.5f));
+
+    WAVIATE_TEST("audited standard math calls compile and execute");
+    const auto mathResult = compileSource("standard_math_calls", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    const float phase = wav.getSeconds() * 50.0f;
+    return sinf(phase)
+         + static_cast<float>(sin(static_cast<double>(phase)))
+         + sqrtf(9.0f)
+         + fmaxf(2.0f, 4.0f);
+}
+)wlsl");
+    expectCompileSuccess(*this, mathResult);
+    if (mathResult)
+    {
+        const float phase = 0.5f;
+        const auto expected = std::sin(phase)
+                            + static_cast<float>(std::sin(static_cast<double>(phase)))
+                            + std::sqrt(9.0f)
+                            + std::fmax(2.0f, 4.0f);
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(mathResult, { .sampleRate = 100.0f, .samplesSinceAppStart = 1 }),
+                                   expected));
+    }
 }
 
 WAVIATE_TEST_CASE(CompilePipelineDeterminismTest, "Compile Pipeline Determinism", "Compile")

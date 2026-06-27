@@ -634,10 +634,10 @@ void CodeEditor::handleCompletionAccepted(const CompletionItem& item)
     while (prefixStart > 0 && (juce::CharacterFunctions::isLetterOrDigit(sourceCode[prefixStart - 1]) || sourceCode[prefixStart - 1] == '_'))
         --prefixStart;
 
-    const int prefixLength = caretOffset - prefixStart;
+    const int prefixEnd = caretOffset;
 
-    // Delete prefix and insert completion
-    document.deleteSection(prefixStart, prefixLength);
+    // CodeDocument::deleteSection takes an end index, not a character count.
+    document.deleteSection(prefixStart, prefixEnd);
     document.insertText(prefixStart, insertionText);
 
     // Position caret after insertion

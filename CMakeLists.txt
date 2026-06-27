@@ -176,6 +176,8 @@ set(WAVIATESCRIPT_CORE_SOURCES
     Source/WaviateAudio.cpp
     Source/WaviateAudio.h
     Source/WaviateFuelInstrumentation.cpp
+    Source/WaviateRuntimeCapabilities.cpp
+    Source/WaviateRuntimeCapabilities.h
     Source/WaviateSafety.cpp
     Source/WaviateSafetyValidator.cpp
 )

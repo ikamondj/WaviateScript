@@ -1,4 +1,5 @@
 #include "WaviateSafety.h"
+#include "WaviateRuntimeCapabilities.h"
 
 #include <algorithm>
 #include <mutex>
@@ -163,6 +164,7 @@ void registerRuntimeSymbols()
                                               reinterpret_cast<void*> (&__waviate_internal_arena_allocate));
         llvm::sys::DynamicLibrary::AddSymbol ("__waviate_internal_arena_generation",
                                               reinterpret_cast<void*> (&__waviate_internal_arena_generation));
+        waviate::runtime::registerAuditedRuntimeSymbols();
     });
 }
 
