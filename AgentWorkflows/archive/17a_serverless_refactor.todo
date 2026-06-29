@@ -1,0 +1,246 @@
+# Additional Workflow: Serverless Endpoint Architecture and Infrastructure Automation
+
+The backend already has marketplace business logic and supports both server and serverless execution paths. This workflow is specifically about making the serverless version clean, modular, reusable, and infrastructure-automated.
+
+Do not implement one giant Lambda/function with an internal request dispatcher.
+
+Each endpoint exposed by the backend should be deployable as its own logical serverless function.
+
+---
+
+## Workflow 1: Break serverless backend into logical functions
+
+Refactor or verify the serverless application so each backend endpoint maps to a separate logical serverless function.
+
+Target compatibility in principle with:
+
+* AWS Lambda
+* Google Cloud Functions / Cloud Run functions
+* Azure Functions
+
+The immediate implementation can start with AWS if needed, but the code structure should not unnecessarily lock the business logic to AWS.
+
+Requirements:
+
+* One deployable serverless function per logical endpoint.
+* No giant catch-all function that manually dispatches every route internally.
+* Shared marketplace business logic remains reusable.
+* Serverless handlers should be thin adapters around shared endpoint logic.
+* Traditional server mode and serverless mode should use the same core code paths where practical.
+
+---
+
+## Workflow 2: Shared endpoint registry / metadata
+
+Create or verify a reusable endpoint definition system.
+
+Each endpoint should declare metadata such as:
+
+* Route path
+* HTTP method: `GET`, `POST`, etc.
+* Whether authentication is required
+* Required role/plan if applicable
+* Handler reference
+* Request/response types if useful
+* Cloud deployment name if useful
+
+Preferred implementation options:
+
+* Explicit Go struct-based route registry
+* Handler registration table
+* Declarative endpoint metadata package
+* Tags/reflection only if they keep the system simpler and easier to maintain
+
+Avoid overly magical reflection if a plain Go registry would be clearer.
+
+The same endpoint metadata should be usable by:
+
+* Traditional HTTP server router setup
+* Serverless function wrapper generation
+* Terraform endpoint configuration
+* Tests that verify route parity
+
+---
+
+## Workflow 3: Reuse code between serverless and server mode
+
+Keep the serverless and server versions aligned.
+
+The architecture should separate:
+
+* Business logic
+* Persistence/database logic
+* Auth/account logic
+* Request validation
+* Response shaping
+* Transport adapters
+
+Suggested structure:
+
+* `internal/core` or equivalent for marketplace business logic
+* `internal/persistence` for Postgres access
+* `internal/auth` for token/user/role logic
+* `internal/endpoints` for endpoint definitions and shared handlers
+* `internal/adapters/httpserver` for traditional server routing
+* `internal/adapters/lambda` for AWS Lambda wrapping
+* Optional future adapters for GCP/Azure
+
+Serverless functions should call shared handlers, not duplicate handler logic.
+
+---
+
+## Workflow 4: Authentication as middleware / cross-cutting concern
+
+Implement OAuth/auth handling as reusable Go middleware or handler-wrapper logic.
+
+Requirements:
+
+* Validate tokens.
+* Reject expired/invalid tokens.
+* Load marketplace account identity.
+* Attach authenticated user/account context to the request.
+* Enforce endpoint auth requirements.
+* Enforce plan/role restrictions where required.
+* Keep creator separate from premium.
+* Avoid copying auth checks manually into every handler.
+
+If OAuth validation must happen in source code, implement it in shared Go auth middleware/wrappers.
+
+If OAuth validation is better handled through cloud API Gateway / ingress configuration, represent that clearly in Terraform.
+
+Even if cloud-managed auth is used, Go should still enforce marketplace-specific rules such as:
+
+* Account identity mapping
+* Standard upload limit
+* Premium upload limit
+* Creator unlimited upload permission
+* Endpoint-specific permissions
+
+---
+
+## Workflow 5: Stateless serverless design
+
+Design all functions for lightweight, stateless cloud execution.
+
+Requirements:
+
+* No local persistent state.
+* No in-memory session dependence.
+* No correctness dependence on warm Lambda/function instances.
+* Database remains the source of truth.
+* Tokens are validated per request.
+* Config/secrets come from environment variables or secret manager references.
+* Cold starts should be kept reasonable.
+* Shared clients may be cached only when safe.
+* Function initialization should be minimal.
+* Logging should be structured enough for cloud logs.
+
+---
+
+## Workflow 6: Terraform automation for serverless deployment
+
+Write Terraform to deploy the serverless endpoints.
+
+Start with AWS if multi-cloud deployment is too much for the first pass, but keep the endpoint metadata and handler structure cloud-portable.
+
+For AWS, Terraform should configure:
+
+* One Lambda per logical endpoint
+* API Gateway routes
+* HTTP methods
+* Auth requirements where applicable
+* Environment variables
+* Secret references
+* IAM roles and policies
+* Postgres/database connectivity
+* VPC/network settings if required
+* Logging
+* Function timeouts
+* Memory settings
+* Deployment outputs such as API base URL
+
+Do not rely on manual AWS console setup for normal deployment.
+
+---
+
+## Workflow 7: Terraform generation / configuration source
+
+Where practical, avoid duplicating endpoint definitions manually in multiple places.
+
+Endpoint metadata should be the source, or at least a validated source, for:
+
+* Server route registration
+* Serverless handler mapping
+* Terraform variables/configuration
+* Tests that verify all exposed endpoints are deployed
+
+Acceptable approaches:
+
+* Generate Terraform variables/config from Go endpoint metadata.
+* Maintain a checked-in endpoint config file generated from Go.
+* Maintain Terraform definitions manually but add tests/scripts that verify they match the Go endpoint registry.
+
+Do not allow route definitions to drift silently between server mode, serverless mode, and infrastructure config.
+
+---
+
+## Workflow 8: OAuth placement decision
+
+Decide where OAuth/token validation belongs:
+
+* Application source code
+* API Gateway/cloud ingress config
+* Hybrid model
+
+Document the decision in code comments or infrastructure notes.
+
+Requirements:
+
+* If handled in Go, use shared middleware/wrappers.
+* If handled in cloud config, include it in Terraform.
+* If hybrid, clearly separate provider-level token validation from marketplace account/role checks.
+* Marketplace account and upload-permission logic should stay in Go.
+
+---
+
+## Workflow 9: Serverless endpoint tests
+
+Add tests to verify:
+
+* Each endpoint has metadata.
+* Each protected endpoint requires auth.
+* Public endpoints remain public.
+* HTTP methods are correct.
+* Serverless handlers call the same core logic as server handlers.
+* Expired/invalid tokens are rejected.
+* Standard, premium, and creator upload restrictions behave correctly.
+* Terraform or generated deployment config includes all expected endpoints.
+
+---
+
+## Workflow 10: Suggested execution order
+
+1. Inspect the current Go backend/serverless structure.
+2. List all marketplace endpoints.
+3. Create or clean up explicit endpoint metadata.
+4. Extract shared business logic away from transport-specific code if needed.
+5. Wire traditional server routes from the same endpoint definitions.
+6. Wire one serverless function per endpoint.
+7. Implement shared auth middleware/wrappers.
+8. Decide whether OAuth validation is source-level, cloud-level, or hybrid.
+9. Add Terraform for deploying endpoint functions.
+10. Add endpoint parity tests.
+11. Add auth and role/plan tests.
+12. Add deployment-config consistency checks.
+
+Final result should support:
+
+* Modular serverless functions.
+* One logical function per endpoint.
+* No giant serverless dispatcher.
+* Shared Go business logic between server and serverless modes.
+* Reusable auth middleware/cross-cutting logic.
+* Endpoint metadata for method/auth/route configuration.
+* Terraform-based deployment automation.
+* Lightweight stateless cloud execution.
+* Clean path toward AWS first, with GCP/Azure portability in mind.

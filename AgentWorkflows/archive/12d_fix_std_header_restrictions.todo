@@ -1,0 +1,22 @@
+The following code produces the following error due to restrictions. I want to limit users' ability to make OS calls and arbitrary code execution but stuff in the standard library that's safe like math functions and other things are fine. Is LLVM too restrictive here? Maybe just audit most of the safe standard library stuff thats not persistent memory access, networking capability, or other OS calls. I just want stuff that would run safe like if someone could program it themselves without OS or other capability access it should be accessible anyway, If we restrict it, with enough time people would just implement it themselves if they needed it anyway but probably less efficiently. See the example below for the issue.
+
+float SampleProcess(const WaviateSample& wav) {
+    return sinf(wav.getSeconds()*50);
+}
+
+float SampleProcess(const WaviateSample& wav) {
+    return sin(wav.getSeconds()*50);
+}
+
+Compiling Waviate Shading Language...
+Compilation error: Unsafe shader rejected before instrumentation:
+- external function 'sinf' is not an audited Waviate runtime capability
+- call to external function 'sinf' from '?SampleProcess@@YAMAEBVWaviateSample@@@Z' is not allowed
+- call to external function 'sinf' from 'sample_process' is not allowed
+
+Compiling Waviate Shading Language...
+Compilation error: Unsafe shader rejected before instrumentation:
+- external function 'sin' is not an audited Waviate runtime capability
+- call to external function 'sin' from '?SampleProcess@@YAMAEBVWaviateSample@@@Z' is not allowed
+- call to external function 'sin' from 'sample_process' is not allowed
+

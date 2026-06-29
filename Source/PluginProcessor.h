@@ -12,6 +12,8 @@
 #include "WaviateInput.h"
 #include "AbstractCompiler.h"
 #include "CompilePipeline.h"
+#include "WaviateAudio.h"
+#include "WaviateSafety.h"
 #include <array>
 #include <atomic>
 
@@ -38,6 +40,12 @@ public:
         juce::String errorMessage;
 
         explicit operator bool() const noexcept { return succeeded; }
+    };
+
+    struct ManualClipInfo
+    {
+        juce::String path;
+        juce::String name;
     };
 
     //==============================================================================
@@ -84,9 +92,23 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    void setFuelLimitPreset(waviate::compile::FuelLimitPreset preset) noexcept;
+    [[nodiscard]] waviate::compile::FuelLimitPreset getFuelLimitPreset() const noexcept;
+    [[nodiscard]] bool isScriptOverBudget() const noexcept;
+    [[nodiscard]] waviate::audio::WaviateAudioCache& getAudioCache() noexcept;
+    [[nodiscard]] const waviate::audio::WaviateAudioCache& getAudioCache() const noexcept;
+    [[nodiscard]] const std::vector<ManualClipInfo>& getManualClips() const noexcept;
+    [[nodiscard]] size_t getManualClipCount() const noexcept;
+    void addManualClip(juce::String path, juce::String name);
+    void setManualClipName(size_t index, juce::String name);
+    void setManualClipPath(size_t index, juce::String path);
+    void removeManualClipAt(size_t index);
+    void clearManualClips();
+    void clearAllAudioClips();
     std::unique_ptr<WaviateSampleInput> wavInput;
     std::vector<std::vector<juce::MidiMessage>> midiBlockMessages;
     juce::AudioVisualiserComponent visualizer;
+    std::function<void()> onAudioCacheChanged;
 #ifdef WAV_SCRIPT_PREMIUM
     GameControllerInterface gameControllerInterface;
     SpscEventQueue<GameControllerEvent, cueCap, true> gamepadEventsQueue;
@@ -95,6 +117,9 @@ public:
 #endif
 private:
     void InitializeMidiMessageLookup(size_t blockSize);
+    void storeRuntimeControls(const ShaderRuntimeControls& runtime) noexcept;
+    [[nodiscard]] ShaderRuntimeControls loadRuntimeControls() const noexcept;
+    void deactivateActiveScript(bool markOverBudget) noexcept;
 
     std::array<uint8_t, 128> midiNoteOnState{};
     std::array<uint8_t, 128> midiCCValueState{};
@@ -106,7 +131,18 @@ private:
     double currentSampleRate = 44100.0;
     uint64_t samplesSinceAppStart = 0;
     std::atomic<bool> processingEnabled { true };
+    std::atomic<bool> scriptOverBudget { false };
+    std::atomic<int> fuelLimitPresetIndex { static_cast<int>(waviate::compile::FuelLimitPreset::Medium) };
+    std::atomic<ShaderSetFuelBudgetFn> activeSetFuelBudget { nullptr };
+    std::atomic<ShaderGetFuelRemainingFn> activeGetFuelRemaining { nullptr };
+    std::atomic<ShaderGetFuelExhaustedFn> activeGetFuelExhausted { nullptr };
+    waviate::audio::WaviateAudioCache audioCache;
     waviate::compile::Pipeline compilePipeline;
+    waviate::safety::EphemeralArena shaderArena;
+    std::vector<ManualClipInfo> manualClips;
+
+    class AudioLoaderThread;
+    std::unique_ptr<AudioLoaderThread> audioLoaderThread;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaviateScriptAudioProcessor)

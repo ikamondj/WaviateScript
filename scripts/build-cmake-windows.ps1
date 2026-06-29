@@ -32,6 +32,56 @@ function Get-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
 
+function Repair-PathValue {
+    param([string]$PathValue)
+
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        return $PathValue
+    }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $cleanedEntries = New-Object System.Collections.Generic.List[string]
+
+    foreach ($rawEntry in ($PathValue -split ';')) {
+        $entry = $rawEntry.Trim()
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            continue
+        }
+
+        if ($entry -match '%[^%]+%') {
+            continue
+        }
+
+        if ($seen.Add($entry)) {
+            [void]$cleanedEntries.Add($entry)
+        }
+    }
+
+    return ($cleanedEntries -join ';')
+}
+
+function Repair-BuildEnvironment {
+    $originalPath = $env:PATH
+    $cleanPath = Repair-PathValue -PathValue $originalPath
+
+    if ($cleanPath -ne $originalPath) {
+        $env:PATH = $cleanPath
+        Write-Host "Sanitized PATH for this build session."
+        Write-Host "  Original length: $($originalPath.Length)"
+        Write-Host "  Cleaned length:  $($cleanPath.Length)"
+    }
+
+    if ($env:CMAKE_GENERATOR_PLATFORM -and -not $env:CMAKE_GENERATOR) {
+        Remove-Item Env:CMAKE_GENERATOR_PLATFORM
+        Write-Host "Removed orphaned CMAKE_GENERATOR_PLATFORM from the environment."
+    }
+
+    if ($env:CMAKE_GENERATOR_TOOLSET -and -not $env:CMAKE_GENERATOR) {
+        Remove-Item Env:CMAKE_GENERATOR_TOOLSET
+        Write-Host "Removed orphaned CMAKE_GENERATOR_TOOLSET from the environment."
+    }
+}
+
 function Find-CMake {
     $candidates = @(
         "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
@@ -143,6 +193,8 @@ $repoRoot = Get-RepoRoot
 $cmake = Find-CMake
 $selectedChoice = Get-MenuChoice -ExistingChoice $Choice
 $settings = Get-BuildSettings -SelectedChoice $selectedChoice -RepoRoot $repoRoot
+
+Repair-BuildEnvironment
 
 $juceDir = "C:/Users/ikamo/OneDrive/Documents/JuceInstalls/JUCE"
 $llvmDir = "C:/Program Files/LLVM/lib/cmake/llvm"

@@ -15,6 +15,8 @@
 #include "AppTheme.h"
 #include "CodeEditor.h"
 #include "CppFileTemplateGenerator.h"
+#include "AudioClipsPanel.h"
+#include "MarketplaceClient.h"
 
 //==============================================================================
 /**
@@ -23,7 +25,8 @@
  * full keyboard support (Ctrl+S for Save, Ctrl+Shift+S for Save As).
  */
 class WaviateScriptAudioProcessorEditor : public juce::AudioProcessorEditor,
-                                         private juce::KeyListener
+                                         private juce::KeyListener,
+                                         private juce::Timer
 {
 public:
     explicit WaviateScriptAudioProcessorEditor(WaviateScriptAudioProcessor&);
@@ -39,6 +42,7 @@ private:
     void showFileMenu();
     void showViewMenu();
     void showToolsMenu();
+    void showLoginMenu();
     void createNewFile();
     void openFile();
     void saveFile();
@@ -75,6 +79,12 @@ private:
     void applyTheme(const WaviateTheme& theme, bool persistSelection);
     void selectTheme(const juce::String& themeId, bool persistSelection);
     void setCompletionsEnabled(bool shouldBeEnabled, bool persistSelection);
+    void setFuelLimitPreset(waviate::compile::FuelLimitPreset preset, bool persistSelection);
+    void beginMarketplaceLogin();
+    void showMarketplaceTokenDialog();
+    void handleMarketplaceSessionPaste(const juce::String& pastedSession);
+    void uploadCurrentScriptToMarketplace();
+    void updateMarketplaceButtons();
     static juce::PropertiesFile::Options createSettingsOptions();
 
     WaviateScriptAudioProcessor& audioProcessor;
@@ -86,6 +96,8 @@ private:
     juce::TextButton viewMenuButton{ "View" };
     juce::TextButton toolsMenuButton{ "Tools" };
     juce::TextButton helpMenuButton{ "Help" };
+    juce::TextButton loginButton{ "Login" };
+    juce::TextButton uploadButton{ "Upload" };
     juce::LookAndFeel_V4 themedLookAndFeel;
     
     // File info display
@@ -106,14 +118,22 @@ private:
     bool isFileModified = false;       // true = file has unsaved changes
     juce::String currentThemeId = WaviateThemes::fallback().id;
     std::unique_ptr<juce::PropertiesFile> userSettings;
+    std::unique_ptr<MarketplaceClient> marketplaceClient;
+
+    bool isAudioClipsPanelOpen = false;
+    AudioClipsPanel audioClipsPanel;
 
     // ===== Layout Constants =====
     static constexpr int toolbarHeight = 32;
     static constexpr int buttonWidth = 60;
+    static constexpr int accountButtonWidth = 78;
+    static constexpr int uploadButtonWidth = 72;
     static constexpr int buttonHeight = 24;
     static constexpr int padding = 6;
 
     CppFileTemplateGenerator cppTemplateGen;
+
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaviateScriptAudioProcessorEditor)
 };

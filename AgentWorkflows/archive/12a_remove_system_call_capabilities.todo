@@ -1,0 +1,79 @@
+In the LLVM compile engine we need to implement a few things for safety. 
+
+No unresolved external symbols except an allowlist.
+Do not rely on banning the standard library as the security boundary.
+The security boundary is the absence of OS/host capabilities.
+The runtime should expose only explicit, audited capabilities to user code.
+No inline asm.
+No function pointer casts to arbitrary addresses.
+No dynamic linking / LoadLibrary / GetProcAddress / dlsym.
+No filesystem/network/thread/process APIs.
+
+Expose allocation only through the wav API facade.
+
+- User code should not access allocators directly.
+- Provide wav.newVector<T>(), wav.newMap<K,V>(), wav.newString(), wav.newArray<T>(size_t size), etc.
+- Returned containers are Waviate wrapper types backed by private fixed-size arena.
+- The engine preallocates a large fixed memory arena like 128 mb.
+- Containers do not trigger OS heap allocation and do not grow the arena itself.
+- Containers may grow only within already-reserved arena capacity.
+- If the arena budget is exhausted, script execution traps and returns a safe fallback.
+- No raw new/delete/malloc/free are available to user code.
+- No OS heap allocation is allowed from the audio thread.
+- All arena references are efficiently closed between sample processing. basically just remove the pointers. 
+
+Ephemeral dynamic allocation model:
+
+- Dynamic allocation is only for temporary per-pass working memory.
+- Allocation has no persistence semantics.
+- Persistent script state will be handled later through a separate persistence API.
+- All dynamic allocations made during one shader/sample pass become invalid before the next shader/sample pass begins.
+- The engine preallocates one large fixed-size arena, e.g. 128 MB, for ephemeral dynamic allocation.
+- The arena is reset after every shader/sample pass using a bump-pointer reset.
+- No per-object freeing is exposed.
+- No per-object tracking is required in the hot path.
+- User code allocates only through the wav API facade:
+  - wav.newVector<T>()
+  - wav.newMap<K,V>()
+  - wav.newString()
+  - wav.newArray<T>(size_t size)
+- These APIs return Waviate wrapper objects backed by the current pass's private arena region.
+- Returned objects are valid only for the current shader/sample pass.
+- Objects must not be stored, cached, or reused across shader/sample passes.
+- Containers may grow only within the already-preallocated arena capacity.
+- Containers do not trigger OS heap allocation and do not grow the arena itself.
+- If the arena budget is exhausted during a pass, script execution traps and returns a safe fallback.
+- No raw new/delete/malloc/free are available to user code.
+- No OS heap allocation is allowed from the audio thread.
+Implementation approach:
+- Use a monotonic bump allocator for all wav.new* dynamic allocations.
+- At the start of each shader/sample pass:
+  - increment arena generation/epoch
+  - reset arena offset to zero
+- During the pass:
+  - wav.new* allocates linearly from the arena
+  - alignment is handled by the allocator
+  - exhaustion traps the script
+- At the end of the pass:
+  - no destructors are run for ordinary ephemeral objects
+  - arena memory is considered invalid
+  - next pass overwrites from the beginning
+Only allow trivially destructible / Waviate-approved ephemeral types.
+Type restrictions:
+
+- Ephemeral arena objects should be trivially destructible or engine-approved.
+- Destructors must not perform I/O, heap free, locking, or host interaction.
+- User-defined types stored in wav containers must not own external resources.
+
+Stack safety (where possible handle this with LLVM & compile time tools):
+
+- Reject alloca and variable-length stack allocations.
+- Reject or cap large static stack arrays during AST/IR validation.
+- Forbid recursion unless a proven depth limit exists.
+- Estimate stack frame size from LLVM MachineFrameInfo/IR analysis where possible.
+- If estimated stack frame exceeds a limit, reject the script before JIT.
+- Large arrays or large struct allocs must use wav.newArray<T>(n) instead or wav.newArray<LargeStruct>(1).
+
+One additional note. If it's possible with LLVM have it instrument so that no global variables as in those defined outside of a function scope are allowed. (ONLY DO THIS IF IT'S EASY AND POSSIBLE WITH LLVM)
+The idea is a user should heavily use stack variables and my available data structures for heap. They can be allowed to get semi global behavior via static function scope allocations but they're still function scoped.
+Shaders should be mostly stateless but it's not a hard requirement as in the future I'll make mutable operations anyway.

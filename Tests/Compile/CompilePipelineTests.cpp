@@ -1,5 +1,6 @@
 #include "../TestSupport/WaviateUnitTest.h"
 #include "CompileTestHelpers.h"
+#include "WaviateSafety.h"
 
 #include <cmath>
 
@@ -67,6 +68,29 @@ float SampleProcess(const WaviateSample& wav)
     expectCompileSuccess(*this, timingResult);
     if (timingResult)
         WAVIATE_EXPECT(nearlyEqual(invokeSample(timingResult, { .sampleRate = 48000.0f }), 24000.5f));
+
+    WAVIATE_TEST("audited standard math calls compile and execute");
+    const auto mathResult = compileSource("standard_math_calls", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    const float phase = wav.getSeconds() * 50.0f;
+    return sinf(phase)
+         + static_cast<float>(sin(static_cast<double>(phase)))
+         + sqrtf(9.0f)
+         + fmaxf(2.0f, 4.0f);
+}
+)wlsl");
+    expectCompileSuccess(*this, mathResult);
+    if (mathResult)
+    {
+        const float phase = 0.5f;
+        const auto expected = std::sin(phase)
+                            + static_cast<float>(std::sin(static_cast<double>(phase)))
+                            + std::sqrt(9.0f)
+                            + std::fmax(2.0f, 4.0f);
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(mathResult, { .sampleRate = 100.0f, .samplesSinceAppStart = 1 }),
+                                   expected));
+    }
 }
 
 WAVIATE_TEST_CASE(CompilePipelineDeterminismTest, "Compile Pipeline Determinism", "Compile")
@@ -201,4 +225,229 @@ float SampleProcess(const WaviateSample& wav)
         invocation.midiCcValue[7] = 99;
         WAVIATE_EXPECT(nearlyEqual(invokeSample(midiResult, invocation), 100.0f));
     }
+}
+
+WAVIATE_TEST_CASE(CompilePipelineAudioLoadPipelineTest, "Compile Pipeline Audio Load Pipeline", "Compile")
+{
+    using namespace waviate::tests::compile;
+    using waviate::audio::WaviateAudioCache;
+    using waviate::audio::WaviateAudioLoadRequest;
+
+    WAVIATE_TEST("loadAudio returns a silent pending clip and queues the exact location once");
+    const auto pendingResult = compileSource("audio_load_pending", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto clip = loadAudio("memory://kick");
+    return static_cast<float>(clip.length()) + clip.read(0.5f) + clip.readSample(0);
+}
+)wlsl");
+    expectCompileSuccess(*this, pendingResult);
+    if (pendingResult)
+    {
+        WaviateAudioCache cache;
+        SampleInvocation invocation;
+        invocation.audioCache = &cache;
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(pendingResult, invocation), 1.0f));
+
+        WaviateAudioLoadRequest request;
+        WAVIATE_EXPECT(cache.popPendingRequest(request));
+        WAVIATE_EXPECT(request.location == "memory://kick");
+        WAVIATE_EXPECT(! cache.popPendingRequest(request));
+    }
+
+    WAVIATE_TEST("loadAudio reads cached audio after the runtime cache is populated");
+    const auto loadedResult = compileSource("audio_load_ready", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto clip = loadAudio("memory://kick");
+    return static_cast<float>(clip.length()) + clip.read(0.5f) + clip.readSample(0);
+}
+)wlsl");
+    expectCompileSuccess(*this, loadedResult);
+    if (loadedResult)
+    {
+        WaviateAudioCache cache;
+        SampleInvocation invocation;
+        invocation.audioCache = &cache;
+
+        static_cast<void>(invokeSample(loadedResult, invocation));
+
+        WaviateAudioLoadRequest request;
+        WAVIATE_EXPECT(cache.popPendingRequest(request));
+        WAVIATE_EXPECT(cache.storeLoadedAudio("memory://kick", { 0.0f, 1.0f, 0.0f }, 1, 48000.0f));
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(loadedResult, invocation), 4.0f));
+        WAVIATE_EXPECT(cache.pendingRequestCount() == 0);
+    }
+}
+
+WAVIATE_TEST_CASE(CompilePipelineFuelMeteringTest, "Compile Pipeline Fuel Metering", "Compile")
+{
+    using namespace waviate::tests::compile;
+
+    WAVIATE_TEST("normal shaders expose fuel runtime and run under a block budget");
+    const auto simpleResult = compileSource("fuel_simple", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    return wav.getIncomingSample() * 0.5f;
+}
+)wlsl");
+    expectCompileSuccess(*this, simpleResult);
+    if (simpleResult)
+    {
+        WAVIATE_EXPECT(simpleResult.runtime.hasFuelMetering());
+        simpleResult.runtime.beginBlock(waviate::compile::calculateFuelBudget(
+            waviate::compile::FuelLimitPreset::Minimal,
+            1,
+            1));
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(simpleResult, { .incomingSample = 0.75f }), 0.375f));
+        WAVIATE_EXPECT(! simpleResult.runtime.isFuelExhausted());
+    }
+
+    WAVIATE_TEST("large loops trip fuel metering and return fallback output");
+    const auto loopResult = compileSource("fuel_loop", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    float x = wav.getIncomingSample() * 0.1f;
+    for (int i = 0; i < 2000; ++i)
+    {
+        x = 3.9f * x * (1.0f - x);
+    }
+    return x;
+}
+)wlsl");
+    expectCompileSuccess(*this, loopResult);
+    if (loopResult)
+    {
+        WAVIATE_EXPECT(loopResult.runtime.hasFuelMetering());
+        loopResult.runtime.beginBlock(64);
+
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(loopResult, { .incomingSample = 0.25f }), 0.0f));
+        WAVIATE_EXPECT(loopResult.runtime.isFuelExhausted());
+        WAVIATE_EXPECT(loopResult.runtime.fuelRemaining() == 0);
+
+        // Reset fallback fuel state so it doesn't affect other things
+        waviate::safety::resetFallbackFuelState();
+    }
+}
+
+WAVIATE_TEST_CASE(CompilePipelineArenaFacadeTest, "Compile Pipeline Arena Facade", "Compile")
+{
+    using namespace waviate::tests::compile;
+
+    WAVIATE_TEST("waviate facade containers allocate through the ephemeral arena");
+    const auto arenaResult = compileSource("arena_facade", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto values = wav.newArray<float>(4);
+    values.set(0, 1.25f);
+    values.set(1, 0.75f);
+
+    auto numbers = wav.newVector<float>();
+    numbers.push(values.get(0));
+    numbers.push(values.get(1));
+
+    auto name = wav.newString("wa");
+    name.append('v');
+
+    auto gains = wav.newMap<int, float>();
+    gains.insert(7, numbers.get(0) + numbers.get(1));
+
+    return gains.get(7, 0.0f) + static_cast<float>(name.size());
+}
+)wlsl");
+    expectCompileSuccess(*this, arenaResult);
+    if (arenaResult)
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(arenaResult), 5.0f));
+
+    WAVIATE_TEST("arena exhaustion traps and returns fallback output");
+    const auto exhaustedResult = compileSource("arena_exhaustion", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    auto tooLarge = wav.newArray<float>(40000000);
+    return tooLarge.valid() ? 1.0f : 2.0f;
+}
+)wlsl");
+    expectCompileSuccess(*this, exhaustedResult);
+    if (exhaustedResult)
+    {
+        exhaustedResult.runtime.beginBlock(1000000);
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(exhaustedResult), 0.0f));
+        WAVIATE_EXPECT(exhaustedResult.runtime.isFuelExhausted());
+        waviate::safety::resetFallbackFuelState();
+    }
+}
+
+WAVIATE_TEST_CASE(CompilePipelineSafetyRejectionTest, "Compile Pipeline Safety Rejection", "Compile")
+{
+    using namespace waviate::tests::compile;
+
+    WAVIATE_TEST("unallowlisted external symbols are rejected even with harmless names");
+    const auto externalResult = compileSource("unsafe_external_symbol", R"wlsl(
+extern "C" float host_escape();
+
+float SampleProcess(const WaviateSample& wav)
+{
+    return host_escape();
+}
+)wlsl");
+    expectCompileFailure(*this, externalResult, "external function");
+
+    WAVIATE_TEST("inline assembly is rejected");
+    const auto asmResult = compileSource("unsafe_inline_asm", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    asm volatile("");
+    return 0.0f;
+}
+)wlsl");
+    expectCompileFailure(*this, asmResult, "asm");
+
+    WAVIATE_TEST("arbitrary function pointer address calls are rejected");
+    const auto pointerResult = compileSource("unsafe_function_pointer_address", R"wlsl(
+using HostCall = float (*)();
+
+float SampleProcess(const WaviateSample& wav)
+{
+    HostCall call = (HostCall)0x12345678ULL;
+    return call();
+}
+)wlsl");
+    expectCompileFailure(*this, pointerResult, "function-pointer");
+
+    WAVIATE_TEST("raw allocation syntax is rejected");
+    const auto allocationResult = compileSource("unsafe_raw_new", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    int* value = new int(3);
+    return static_cast<float>(*value);
+}
+)wlsl");
+    expectCompileFailure(*this, allocationResult, "new");
+
+    WAVIATE_TEST("mutable global storage is rejected");
+    const auto globalResult = compileSource("unsafe_mutable_global", R"wlsl(
+float persistent = 1.0f;
+
+float SampleProcess(const WaviateSample& wav)
+{
+    persistent += 1.0f;
+    return persistent;
+}
+)wlsl");
+    expectCompileFailure(*this, globalResult, "global");
+
+    WAVIATE_TEST("dynamic stack allocation is rejected");
+    const auto stackResult = compileSource("unsafe_dynamic_stack", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    int count = wav.getBlockSize();
+    float values[count];
+    values[0] = 1.0f;
+    return values[0];
+}
+)wlsl");
+    expectCompileFailure(*this, stackResult, "stack");
 }

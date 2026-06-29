@@ -1,0 +1,94 @@
+Task:
+Create user-facing and developer-facing documentation for WebAssembly shader execution, constraints, build setup, and migration from native shader execution.
+
+Background:
+Current docs describe shader functions, C as the authoritative ABI, execution order, pass-through behavior, and WebAssembly as a possible output format. They do not yet explain block-level WebAssembly execution, sandbox constraints, runtime behavior, toolchain setup, or how existing per-sample/per-bin authoring maps to block-level module execution.
+
+Dependencies:
+- Depends on `08a_wasm_scope_and_architecture.todo`.
+- Depends on `08b_wasm_block_abi_and_memory.todo`.
+- Depends on `08c_wasm_shader_wrapper_codegen.todo`.
+- Depends on `08d_wasm_toolchain_and_build.todo`.
+- Depends on `08e_wasm_runtime_integration.todo`.
+- Depends on `08f_wasm_state_and_input_mapping.todo`.
+- Should follow `08g_wasm_testing_and_benchmarks.todo` once tests define practical examples and limits.
+
+Requirements:
+- Inspect these paths before writing docs:
+  - `Docs/rules.md`
+  - `Docs/home.md`
+  - `Docs/input_api_c.md`
+  - `Docs/input_api_cpp.md`
+  - `Docs/index.html`
+  - `AgentWorkflows/changelogs/EDITOR_UI_GUIDE.md`
+  - `AgentWorkflows/changelogs/EDITOR_QUICK_REF.md`
+  - `AgentWorkflows/changelogs/INSTALLER_GUIDE.md`
+  - `AgentWorkflows/changelogs/INSTALLER_SETUP.md`
+  - `Source/CFileTemplateGenerator.cpp`
+  - `Source/CppFileTemplateGenerator.cpp`
+  - `Source/CodeEditor.h`
+  - `Source/CodeEditor.cpp`
+  - `Source/PluginEditor.cpp`
+- Update docs to explain the WebAssembly execution model:
+  - Users still author `sample_process` and/or `frequency_process`.
+  - WebAssembly compilation wraps those functions in block-level entrypoints.
+  - The host does not call into WebAssembly once per sample or once per bin.
+  - Sample stage runs before frequency stage when both exist.
+  - Missing frequency stage can still skip FFT.
+- Document sandbox constraints:
+  - No OS resource access.
+  - No filesystem/network/process imports.
+  - No arbitrary host callbacks.
+  - Deterministic memory and import policy.
+  - Runtime traps and fallback behavior.
+- Document input/state mapping at the level users need:
+  - Which fields behave the same as native.
+  - Which fields have block-lifetime guarantees.
+  - Which fields are snapshots.
+  - Which fields are premium-only.
+  - How sample history and mutable shader state persist.
+- Document frequency-domain behavior:
+  - Host-side FFT/windowing/overlap-add responsibilities.
+  - Module-side bin processing responsibilities.
+  - Pass-through expectations and possible windowing artifacts.
+- Document build and install requirements:
+  - LLVM/Clang WebAssembly target expectations.
+  - Runtime dependency and packaging notes.
+  - Debug info and diagnostics.
+  - Public vs premium build differences.
+- Document migration guidance:
+  - Existing C/C++ shaders should keep the same scalar functions.
+  - Native-only assumptions to avoid.
+  - Pointer lifetime and external library limitations.
+  - Rust WebAssembly status based on the decision from `08a`.
+- Update editor-facing docs if a target mode or extension is added:
+  - `.wc`
+  - `.wcpp`
+  - `.wrs`
+  - `.wasm` or `.wwasm` if applicable.
+- Include developer notes linking the implementation areas:
+  - Compiler pipeline.
+  - ABI/memory layout.
+  - Runtime activation.
+  - Tests and benchmarks.
+
+Acceptance criteria:
+- Docs clearly distinguish user scalar authoring from block-level WebAssembly execution.
+- Docs state that production WebAssembly processing must cross the VM boundary at block granularity.
+- Docs preserve and explain sample-then-frequency order.
+- Docs explain public vs premium feature availability.
+- Docs explain Rust WebAssembly status.
+- Docs include migration notes for existing native shader authors.
+- Docs include enough setup detail for a developer to build or diagnose the WebAssembly target.
+
+Testing:
+- Verify docs links render through the existing docs site.
+- Verify examples match the actual templates and ABI names.
+- Verify no docs imply per-sample or per-bin host-to-VM calls as the WebAssembly execution model.
+- Verify public docs do not expose premium-only APIs as available in public builds.
+
+Out of scope:
+- Implementing WebAssembly support.
+- Changing runtime behavior.
+- Changing build configuration.
+- Adding broad marketing copy.

@@ -21,6 +21,171 @@ const size_t midiInitialCapacity = 128;
 constexpr size_t midiStateCount = 128;
 
 //==============================================================================
+
+class WaviateScriptAudioProcessor::AudioLoaderThread : public juce::Thread
+{
+public:
+    AudioLoaderThread(WaviateScriptAudioProcessor& processor, waviate::audio::WaviateAudioCache& cache)
+        : juce::Thread("AudioLoaderThread"), processor_(processor), cache_(cache)
+    {
+    }
+
+    ~AudioLoaderThread() override
+    {
+        stopThread(4000);
+    }
+
+    void trigger()
+    {
+        triggerEvent.signal();
+    }
+
+    void run() override
+    {
+        while (! threadShouldExit())
+        {
+            if (! triggerEvent.wait(500))
+                continue;
+
+            if (threadShouldExit())
+                break;
+
+            waviate::audio::WaviateAudioLoadRequest req;
+            while (cache_.popPendingRequest(req))
+            {
+                if (threadShouldExit())
+                    break;
+
+                juce::String locationStr = juce::String::fromUTF8(req.location.data(), static_cast<int>(req.location.size()));
+                juce::Logger::writeToLog("Loading audio from: " + locationStr);
+
+                auto result = loadAudioLocation(locationStr);
+                if (result.succeeded)
+                {
+                    cache_.storeLoadedAudio(req.location, std::move(result.interleavedSamples), result.channelCount, result.sampleRate);
+                    triggerUIUpdate();
+                }
+                else
+                {
+                    cache_.markFailed(req.location, result.errorMessage);
+                    triggerUIUpdate();
+                }
+            }
+        }
+    }
+
+    void triggerUIUpdate()
+    {
+        juce::MessageManager::callAsync([this]() {
+            if (processor_.onAudioCacheChanged)
+                processor_.onAudioCacheChanged();
+        });
+    }
+
+    struct LoadResult
+    {
+        std::vector<float> interleavedSamples;
+        int32_t channelCount = 0;
+        float sampleRate = 0.0f;
+        bool succeeded = false;
+        std::string errorMessage;
+    };
+
+    static LoadResult loadAudioLocation(const juce::String& location)
+    {
+        LoadResult result;
+        
+        juce::AudioFormatManager formatManager;
+        formatManager.registerBasicFormats();
+
+        std::unique_ptr<juce::InputStream> stream;
+
+        if (location.startsWithIgnoreCase("http://") || location.startsWithIgnoreCase("https://"))
+        {
+#ifdef WAV_SCRIPT_PREMIUM
+            juce::URL url(location);
+            if (! url.isWellFormed())
+            {
+                result.errorMessage = "Malformed URL: " + location.toStdString();
+                return result;
+            }
+
+            juce::MemoryBlock mb;
+            if (! url.readEntireBinaryStream(mb))
+            {
+                result.errorMessage = "Failed to download from URL: " + location.toStdString();
+                return result;
+            }
+
+            stream = std::make_unique<juce::MemoryInputStream>(mb, false);
+#else
+            result.errorMessage = "Loading from URL requires Premium edition.";
+            return result;
+#endif
+        }
+        else
+        {
+            juce::File file = juce::File::createFileWithoutCheckingPath(location);
+            if (! file.existsAsFile())
+            {
+                result.errorMessage = "File does not exist: " + file.getFullPathName().toStdString();
+                return result;
+            }
+            stream = file.createInputStream();
+            if (stream == nullptr)
+            {
+                result.errorMessage = "Failed to open file: " + file.getFullPathName().toStdString();
+                return result;
+            }
+        }
+
+        std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(std::move(stream)));
+        if (reader == nullptr)
+        {
+            result.errorMessage = "Unsupported or corrupt format: " + location.toStdString();
+            return result;
+        }
+
+        if (reader->numChannels == 0 || reader->lengthInSamples == 0)
+        {
+            result.errorMessage = "Invalid channels or length";
+            return result;
+        }
+
+        const auto numSamples = reader->lengthInSamples;
+        const auto numChannels = static_cast<int>(reader->numChannels);
+        juce::AudioBuffer<float> buffer(numChannels, static_cast<int>(numSamples));
+        
+        if (! reader->read(&buffer, 0, static_cast<int>(numSamples), 0, true, true))
+        {
+            result.errorMessage = "Failed to read audio samples";
+            return result;
+        }
+
+        result.channelCount = numChannels;
+        result.sampleRate = static_cast<float>(reader->sampleRate);
+        result.interleavedSamples.resize(static_cast<size_t>(numSamples) * static_cast<size_t>(numChannels));
+
+        for (int c = 0; c < numChannels; ++c)
+        {
+            const float* src = buffer.getReadPointer(c);
+            for (size_t i = 0; i < static_cast<size_t>(numSamples); ++i)
+            {
+                result.interleavedSamples[i * static_cast<size_t>(numChannels) + static_cast<size_t>(c)] = src[i];
+            }
+        }
+
+        result.succeeded = true;
+        return result;
+    }
+
+private:
+    WaviateScriptAudioProcessor& processor_;
+    waviate::audio::WaviateAudioCache& cache_;
+    juce::WaitableEvent triggerEvent;
+};
+
+//==============================================================================
 WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : 
@@ -53,6 +218,13 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
     wavInput->sampleRate = static_cast<float>(currentSampleRate);
 
     InitializeMidiMessageLookup(maxBlockSize);
+
+    audioLoaderThread = std::make_unique<AudioLoaderThread>(*this, audioCache);
+    audioCache.onRequestAdded = [this]() {
+        if (audioLoaderThread)
+            audioLoaderThread->trigger();
+    };
+    audioLoaderThread->startThread();
 }
 
 void WaviateScriptAudioProcessor::InitializeMidiMessageLookup(size_t blockSize) {
@@ -71,6 +243,7 @@ void WaviateScriptAudioProcessor::InitializeMidiMessageLookup(size_t blockSize) 
 
 WaviateScriptAudioProcessor::~WaviateScriptAudioProcessor()
 {
+    audioLoaderThread.reset();
 }
 
 //==============================================================================
@@ -135,8 +308,14 @@ WaviateScriptAudioProcessor::compileAndActivateSource(const juce::String& extens
 
         if (compiled.hasEntryPoints())
         {
+            storeRuntimeControls(compiled.runtime);
+            scriptOverBudget.store(false, std::memory_order_release);
             activeSampleShader.store(compiled.sampleShader, std::memory_order_release);
             activeFrequencyShader.store(compiled.frequencyShader, std::memory_order_release);
+        }
+        else
+        {
+            deactivateActiveScript(false);
         }
     }
     catch (const std::exception& e)
@@ -469,6 +648,17 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // ----- SampleWise Processing (segment) -----
     SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
     if (sampleShader) {
+        const auto runtime = loadRuntimeControls();
+        if (runtime.hasFuelMetering())
+        {
+            runtime.beginBlock(waviate::compile::calculateFuelBudget(
+                getFuelLimitPreset(),
+                blockNumSamples,
+                mainOutputCh));
+        }
+
+        bool scriptTrapped = false;
+
         for (int samp = 0; samp < blockNumSamples; ++samp)
         {
             const uint64_t absoluteSample = samplesSinceAppStart + static_cast<uint64_t>(samp);
@@ -494,10 +684,31 @@ void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             for (int ch = 0; ch < mainOutputCh; ++ch)
             {
                 wavInput->channel = static_cast<uint8_t>(ch);
-                mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
+                {
+                    waviate::safety::ScopedArenaPass arenaPass(shaderArena);
+                    mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
+                }
+
+                if (runtime.isFuelExhausted())
+                {
+                    scriptTrapped = true;
+                    break;
+                }
             }
 
             sampleMidiMessages.clear();
+
+            if (scriptTrapped)
+                break;
+        }
+
+        if (scriptTrapped)
+        {
+            mainOut.clear();
+            deactivateActiveScript(true);
+            samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
+            pushVisualizerSamples();
+            return;
         }
     }
 
@@ -536,6 +747,125 @@ void WaviateScriptAudioProcessor::setStateInformation (const void* data, int siz
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
+}
+
+//==============================================================================
+
+waviate::audio::WaviateAudioCache& WaviateScriptAudioProcessor::getAudioCache() noexcept
+{
+    return audioCache;
+}
+
+const waviate::audio::WaviateAudioCache& WaviateScriptAudioProcessor::getAudioCache() const noexcept
+{
+    return audioCache;
+}
+
+const std::vector<WaviateScriptAudioProcessor::ManualClipInfo>& WaviateScriptAudioProcessor::getManualClips() const noexcept
+{
+    return manualClips;
+}
+
+size_t WaviateScriptAudioProcessor::getManualClipCount() const noexcept
+{
+    return manualClips.size();
+}
+
+void WaviateScriptAudioProcessor::addManualClip(juce::String path, juce::String name)
+{
+    manualClips.push_back({path, name});
+    if (path.isNotEmpty())
+        audioCache.registerManualClip(path.toStdString(), name.toStdString());
+}
+
+void WaviateScriptAudioProcessor::setManualClipName(size_t index, juce::String name)
+{
+    if (index < manualClips.size())
+    {
+        manualClips[index].name = name;
+        if (manualClips[index].path.isNotEmpty())
+            audioCache.setClipName(manualClips[index].path.toStdString(), name.toStdString());
+    }
+}
+
+void WaviateScriptAudioProcessor::setManualClipPath(size_t index, juce::String path)
+{
+    if (index < manualClips.size())
+    {
+        if (manualClips[index].path.isNotEmpty())
+            audioCache.removeManualClip(manualClips[index].path.toStdString());
+
+        manualClips[index].path = path;
+        
+        if (path.isNotEmpty())
+            audioCache.registerManualClip(path.toStdString(), manualClips[index].name.toStdString());
+    }
+}
+
+void WaviateScriptAudioProcessor::removeManualClipAt(size_t index)
+{
+    if (index < manualClips.size())
+    {
+        if (manualClips[index].path.isNotEmpty())
+            audioCache.removeManualClip(manualClips[index].path.toStdString());
+        
+        manualClips.erase(manualClips.begin() + static_cast<std::ptrdiff_t>(index));
+    }
+}
+
+void WaviateScriptAudioProcessor::clearManualClips()
+{
+    for (const auto& clip : manualClips)
+    {
+        if (clip.path.isNotEmpty())
+            audioCache.removeManualClip(clip.path.toStdString());
+    }
+    manualClips.clear();
+}
+
+void WaviateScriptAudioProcessor::clearAllAudioClips()
+{
+    audioCache.clear();
+    manualClips.clear();
+}
+
+void WaviateScriptAudioProcessor::setFuelLimitPreset(waviate::compile::FuelLimitPreset preset) noexcept
+{
+    fuelLimitPresetIndex.store(static_cast<int>(preset), std::memory_order_relaxed);
+}
+
+waviate::compile::FuelLimitPreset WaviateScriptAudioProcessor::getFuelLimitPreset() const noexcept
+{
+    return static_cast<waviate::compile::FuelLimitPreset>(fuelLimitPresetIndex.load(std::memory_order_relaxed));
+}
+
+bool WaviateScriptAudioProcessor::isScriptOverBudget() const noexcept
+{
+    return scriptOverBudget.load(std::memory_order_relaxed);
+}
+
+void WaviateScriptAudioProcessor::storeRuntimeControls(const ShaderRuntimeControls& runtime) noexcept
+{
+    activeSetFuelBudget.store(runtime.setFuelBudget, std::memory_order_release);
+    activeGetFuelRemaining.store(runtime.getFuelRemaining, std::memory_order_release);
+    activeGetFuelExhausted.store(runtime.getFuelExhausted, std::memory_order_release);
+}
+
+ShaderRuntimeControls WaviateScriptAudioProcessor::loadRuntimeControls() const noexcept
+{
+    ShaderRuntimeControls runtime;
+    runtime.setFuelBudget = activeSetFuelBudget.load(std::memory_order_acquire);
+    runtime.getFuelRemaining = activeGetFuelRemaining.load(std::memory_order_acquire);
+    runtime.getFuelExhausted = activeGetFuelExhausted.load(std::memory_order_acquire);
+    return runtime;
+}
+
+void WaviateScriptAudioProcessor::deactivateActiveScript(bool markOverBudget) noexcept
+{
+    activeSampleShader.store(nullptr, std::memory_order_release);
+    activeFrequencyShader.store(nullptr, std::memory_order_release);
+    storeRuntimeControls({});
+    scriptOverBudget.store(markOverBudget, std::memory_order_release);
 }
 
 //==============================================================================

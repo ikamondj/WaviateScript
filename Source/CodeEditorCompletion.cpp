@@ -7,6 +7,7 @@
 */
 
 #include "CodeEditorCompletion.h"
+#include "WaviateAudio.h"
 #include "WaviateCppLanguageModel.h"
 
 #include <algorithm>
@@ -155,6 +156,7 @@ bool isKnownWaviateObjectType(const juce::String& type)
     return type == "WaviateCore"
         || type == "WaviateSample"
         || type == "WaviateFrequency"
+        || type == "WaviateAudio"
         || type == "WaviateSampleInput"
         || type == "WaviateFrequencyInput"
         || type == "WaviateComplex";
@@ -261,6 +263,12 @@ std::vector<CompletionItem> CompletionProvider::getCompletions(const juce::Strin
 
     if (context.isMemberAccess)
     {
+        if (context.memberOwnerExpression == "Clips")
+        {
+            auto completions = getClipsCompletions();
+            return sortByRelevance(filterByPrefix(completions, context.prefix), context.prefix);
+        }
+
         context.memberOwnerType = resolveExpressionType(context.memberOwnerExpression, symbols);
         if (context.memberOwnerType.isEmpty())
             return {};
@@ -313,11 +321,12 @@ CompletionProvider::CompletionContext CompletionProvider::getCompletionContext(c
 
     const bool isDotAccess = operatorEnd >= 0 && sourceCode[operatorEnd] == '.';
     const bool isArrowAccess = operatorEnd >= 1 && sourceCode[operatorEnd - 1] == '-' && sourceCode[operatorEnd] == '>';
+    const bool isScopeAccess = operatorEnd >= 1 && sourceCode[operatorEnd - 1] == ':' && sourceCode[operatorEnd] == ':';
 
-    if (! isDotAccess && ! isArrowAccess)
+    if (! isDotAccess && ! isArrowAccess && ! isScopeAccess)
         return context;
 
-    const int ownerEnd = isDotAccess ? operatorEnd - 1 : operatorEnd - 2;
+    const int ownerEnd = isDotAccess ? operatorEnd - 1 : (isArrowAccess ? operatorEnd - 2 : operatorEnd - 2);
     context.memberOwnerExpression = extractOwnerExpressionEndingAt(sourceCode, ownerEnd);
     context.isMemberAccess = context.memberOwnerExpression.isNotEmpty();
     return context;
@@ -332,7 +341,7 @@ CompletionProvider::SymbolTable CompletionProvider::buildVisibleSymbolTable(cons
     const auto stripped = stripCommentsAndStrings(sourceCode.substring(0, caretPos)).toStdString();
 
     const std::regex typedDeclaration(
-        R"((?:^|[;{}\n,(])\s*((?:(?:const|volatile)\s+)*(?:bool|char|float|double|int|int32_t|uint8_t|uint32_t|uint64_t|WaviateSample|WaviateFrequency|WaviateCore|WaviateSampleInput|WaviateSampleStateWriter|WaviateFrequencyInput|WaviateFrequencyStateWriter|WaviateComplex)\s*(?:(?:const|volatile)\s*)?[*&]?)\s+([A-Za-z_][A-Za-z0-9_]*))");
+        R"((?:^|[;{}\n,(])\s*((?:(?:const|volatile)\s+)*(?:bool|char|float|double|int|int32_t|uint8_t|uint32_t|uint64_t|WaviateSample|WaviateFrequency|WaviateCore|WaviateAudio|WaviateAudioAddressMode|WaviateAudioInterpolation|WaviateSampleInput|WaviateSampleStateWriter|WaviateFrequencyInput|WaviateFrequencyStateWriter|WaviateComplex)\s*(?:(?:const|volatile)\s*)?[*&]?)\s+([A-Za-z_][A-Za-z0-9_]*))");
 
     for (auto it = std::sregex_iterator(stripped.begin(), stripped.end(), typedDeclaration);
          it != std::sregex_iterator();
@@ -347,7 +356,7 @@ CompletionProvider::SymbolTable CompletionProvider::buildVisibleSymbolTable(cons
     }
 
     const std::regex autoConstruction(
-        R"(\bauto\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(WaviateSample|WaviateFrequency|WaviateCore|WaviateComplex)\b)");
+        R"(\bauto\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(WaviateSample|WaviateFrequency|WaviateCore|WaviateAudio|WaviateComplex)\b)");
 
     for (auto it = std::sregex_iterator(stripped.begin(), stripped.end(), autoConstruction);
          it != std::sregex_iterator();
@@ -355,6 +364,25 @@ CompletionProvider::SymbolTable CompletionProvider::buildVisibleSymbolTable(cons
     {
         const auto match = *it;
         symbols[juce::String(match[1].str())] = juce::String(match[2].str());
+    }
+
+    const std::regex autoGlobalCall(
+        R"(\bauto\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*\()");
+
+    for (auto it = std::sregex_iterator(stripped.begin(), stripped.end(), autoGlobalCall);
+         it != std::sregex_iterator();
+         ++it)
+    {
+        const auto match = *it;
+        const auto functionName = match[2].str();
+        const auto found = std::find_if(waviate::language::waviateGlobalFunctions().begin(),
+                                        waviate::language::waviateGlobalFunctions().end(),
+                                        [&functionName](const FunctionSymbol& symbol) {
+                                            return symbol.name == functionName;
+                                        });
+
+        if (found != waviate::language::waviateGlobalFunctions().end())
+            symbols[juce::String(match[1].str())] = juce::String(found->returnType);
     }
 
     const std::regex autoMemberCall(
@@ -387,6 +415,9 @@ juce::String CompletionProvider::resolveExpressionType(const juce::String& expre
     const auto trimmedExpression = trimExpression(expression);
     if (trimmedExpression.isEmpty())
         return {};
+
+    if (trimmedExpression.startsWith("Clips::"))
+        return "WaviateAudio";
 
     const auto directType = normaliseTypeName(trimmedExpression);
     if (isKnownWaviateObjectType(directType))
@@ -447,6 +478,9 @@ juce::String CompletionProvider::resolveMemberReturnType(const juce::String& own
     if (normalisedOwnerType == "WaviateCore")
         return findReturnType(waviate::language::waviateCoreMemberFunctions());
 
+    if (normalisedOwnerType == "WaviateAudio")
+        return findReturnType(waviate::language::waviateAudioMemberFunctions());
+
     return {};
 }
 
@@ -455,9 +489,29 @@ std::vector<CompletionItem> CompletionProvider::getGlobalCompletions(const juce:
 {
     std::vector<CompletionItem> result;
 
+    {
+        CompletionItem clipsItem;
+        clipsItem.name = "Clips";
+        clipsItem.displayText = "Clips";
+        clipsItem.insertText = "Clips::";
+        clipsItem.kind = CompletionItem::Kind::Class;
+        clipsItem.documentation = "Namespace containing manually loaded audio clips.";
+        result.push_back(clipsItem);
+    }
+
     appendCompletions(result, waviate::language::waviateEntryPoints(), [](const FunctionSymbol& symbol) {
         return makeFunctionCompletion(symbol, false);
     });
+
+    appendCompletions(result, waviate::language::waviateGlobalFunctions(), [](const FunctionSymbol& symbol) {
+        return makeFunctionCompletion(symbol, true);
+    });
+
+    appendCompletions(result, waviate::language::cMathFunctions(), [](const FunctionSymbol& symbol) {
+        return makeFunctionCompletion(symbol, true);
+    });
+
+    appendCompletions(result, waviate::language::cMathConstants(), makeFieldCompletion);
 
     appendCompletions(result, waviate::language::cppBuiltinTypes(), makeFieldCompletion);
     appendCompletions(result, waviate::language::cppKeywords(), makeFieldCompletion);
@@ -493,6 +547,13 @@ std::vector<CompletionItem> CompletionProvider::getMemberCompletionsForType(cons
     if (type == "WaviateFrequency")
     {
         appendCompletions(result, waviate::language::waviateFrequencyMemberFunctions(), [](const FunctionSymbol& symbol) {
+            return makeFunctionCompletion(symbol, true);
+        });
+    }
+
+    if (type == "WaviateAudio")
+    {
+        appendCompletions(result, waviate::language::waviateAudioMemberFunctions(), [](const FunctionSymbol& symbol) {
             return makeFunctionCompletion(symbol, true);
         });
     }
@@ -753,6 +814,46 @@ std::vector<CompletionItem> CompletionProvider::sortByRelevance(const std::vecto
     return result;
 }
 
+std::vector<CompletionItem> CompletionProvider::getClipsCompletions() const
+{
+    std::vector<CompletionItem> result;
+    if (auto* cache = waviate::audio::getCurrentThreadAudioCache())
+    {
+        auto sanitizeIdentifier = [](const std::string& name) -> std::string {
+            std::string res;
+            for (char c : name)
+            {
+                if (std::isalnum(static_cast<unsigned char>(c)))
+                    res.push_back(c);
+                else
+                    res.push_back('_');
+            }
+            if (res.empty() || std::isdigit(static_cast<unsigned char>(res[0])))
+                res.insert(res.begin(), '_');
+            return res;
+        };
+
+        for (const auto& info : cache->snapshot())
+        {
+            if (info.isManual && ! info.customName.empty())
+            {
+                CompletionItem item;
+                std::string ident = sanitizeIdentifier(info.customName);
+                item.name = ident;
+                item.displayText = ident;
+                item.insertText = ident;
+                item.kind = CompletionItem::Kind::Constant;
+                item.documentation = "Loaded audio constant:\nPath: " + info.location 
+                    + "\nFrames: " + std::to_string(info.frameCount)
+                    + "\nChannels: " + std::to_string(info.channelCount)
+                    + "\nRate: " + std::to_string(info.sampleRate) + " Hz";
+                result.push_back(item);
+            }
+        }
+    }
+    return result;
+}
+
 //==============================================================================
 // CompletionPopupMenu
 //==============================================================================
@@ -929,7 +1030,7 @@ juce::String CompletionPopupMenu::getKindLabel(CompletionItem::Kind kind)
         case CompletionItem::Kind::Type: return "type";
         case CompletionItem::Kind::Constant: return "const";
         case CompletionItem::Kind::Class: return "cls";
-        case CompletionItem::Kind::Method: return "meth";
+        case CompletionItem::Kind::Method: return "mthd";
         case CompletionItem::Kind::Variable: return "var";
     }
 

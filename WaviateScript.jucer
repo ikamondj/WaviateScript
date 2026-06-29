@@ -46,6 +46,8 @@
       <GROUP id="{F056CC0F-5F5D-B1C5-DDBD-9EC9FAF730B8}" name="Inputs"/>
       <FILE id="wavh01" name="Waviate.h" compile="0" resource="0" file="Source/Waviate.h"/>
       <FILE id="wavhpp" name="Waviate.hpp" compile="0" resource="0" file="Source/Waviate.hpp"/>
+      <FILE id="waudcpp" name="WaviateAudio.cpp" compile="1" resource="0" file="Source/WaviateAudio.cpp"/>
+      <FILE id="waudh1" name="WaviateAudio.h" compile="0" resource="0" file="Source/WaviateAudio.h"/>
       <FILE id="yvUwGd" name="WaviateInput.h" compile="0" resource="0" file="Source/WaviateInput.h"/>
       <FILE id="rTu4JN" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>

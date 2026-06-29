@@ -1,0 +1,112 @@
+Task:
+Define the block-level WebAssembly ABI and linear-memory layout for WaviateScript shader execution.
+
+Background:
+The current native ABI exposes `sample_process(const WaviateSampleInput*, WaviateSampleStateWriter*)` and `frequency_process(const WaviateFrequencyInput*, WaviateFrequencyStateWriter*)`. Those inputs contain host pointers, channel counts, MIDI state, sidechain data, sample history, current output data, frequency data, and premium-only OSC/controller fields. Raw host pointers cannot be passed directly into a sandboxed WebAssembly module, so the WebAssembly target needs a versioned offset-based linear-memory contract.
+
+The WebAssembly ABI must support block-level invocation. The host should prepare memory once per block or processing unit, call one or a small number of exported block entrypoints, then read results back without crossing the VM boundary for every sample or bin.
+
+Dependencies:
+- Depends on `08a_wasm_scope_and_architecture.todo`.
+
+Requirements:
+- Inspect these paths before designing the ABI:
+  - `Source/WaviateInput.h`
+  - `Source/AbstractCompiler.h`
+  - `Source/PluginProcessor.cpp`
+  - `Docs/input_api_c.md`
+  - `Docs/rules.md`
+  - `Docs/home.md`
+  - `Source/WSPremium/OSCInput.h`
+  - `Source/WSPremium/OSCInterface.h`
+  - `Source/GameControllerInput.h`
+  - `Source/GameController.h`
+- Produce an ABI design output that can be implemented by future code tasks.
+- Define an ABI version header in WebAssembly linear memory with at least:
+  - Magic value.
+  - ABI version.
+  - Header size.
+  - Endianness assumption.
+  - Pointer size assumption for module offsets.
+  - Feature flags for sample stage, frequency stage, sidechain, MIDI, controller/HID, OSC, and debug support.
+  - Block size.
+  - Input channel count.
+  - Output channel count.
+  - Sidechain channel count.
+  - Sample rate.
+  - Absolute sample counter for the first sample in the block.
+  - Offsets and lengths for every buffer region.
+- Use offsets into WebAssembly linear memory, not native pointers, for all module-visible data.
+- Define memory layout for public sample-stage data:
+  - Main input samples as contiguous channel-major or sample-major arrays, with the layout explicitly chosen.
+  - Sidechain input samples.
+  - Current output samples.
+  - Previous sample history.
+  - MIDI note states.
+  - MIDI CC values.
+  - Sample counters for note on, note off, and CC changes.
+  - Sustain state and deferred sustain note-off state.
+  - Mutable sample shader state.
+- Define memory layout for frequency-stage data:
+  - Complex format compatible with `WaviateComplex`.
+  - Current frequency data.
+  - Input frequency data.
+  - Sidechain frequency data.
+  - Output frequency data.
+  - FFT size or sample width.
+  - Total bin count.
+  - Window and hop metadata if needed.
+  - Mutable frequency shader state.
+- Define memory layout for premium-only data:
+  - Controller count.
+  - Controller button masks.
+  - Controller button change sample counters.
+  - Controller axis values.
+  - Controller axis change sample counters.
+  - OSC int, float, color, and string slots.
+- Define how the ABI represents per-call native fields inside a block wrapper:
+  - Sample index or position in block.
+  - Channel.
+  - Frequency bin.
+  - Sample rate.
+  - App sample counter.
+  - Block size.
+  - Input/output/sidechain channel counts.
+  - Current output sample data.
+- Define ownership and lifetime rules:
+  - Host owns native buffers.
+  - WebAssembly memory is owned by the runtime instance.
+  - Host copies or maps data according to the runtime's safety model.
+  - No WebAssembly memory growth on the audio thread.
+  - Memory regions remain stable for the active block call.
+- Define alignment requirements for scalar, float, complex, and string data.
+- Define validation rules before activation:
+  - Required exports exist.
+  - Memory exists and is large enough.
+  - ABI version is supported.
+  - No required offset/length pair escapes memory bounds.
+- Define how traps or invalid memory state report errors without throwing or allocating on the audio thread.
+
+Acceptance criteria:
+- The ABI design names every buffer and metadata region future code must allocate or populate.
+- The ABI uses block-level entrypoints and explicitly rejects per-sample or per-bin host-to-VM invocation as the primary model.
+- The ABI can represent all current fields in `WaviateSampleInput` and `WaviateFrequencyInput`, including premium fields behind feature flags.
+- The design explains state reader/writer behavior and how mutable shader state persists across calls without native pointers.
+- The design explains how sample and frequency stages share or sequence memory when both functions exist.
+- The design includes a validation checklist that future runtime code can apply before activation.
+
+Testing:
+- No runtime tests are required for this design task.
+- Include proposed unit tests for the later implementation:
+  - ABI header size and offsets.
+  - Bounds validation failures.
+  - Public build excludes premium memory regions.
+  - Premium build includes gated memory regions only when enabled.
+  - Sample and frequency layouts preserve expected numeric values.
+
+Out of scope:
+- Implementing the ABI in C++.
+- Modifying `WaviateInput.h`.
+- Adding runtime dependencies.
+- Implementing copy-in/copy-out logic.
+- Changing user-facing docs.

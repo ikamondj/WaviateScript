@@ -75,6 +75,7 @@ private:
     juce::String resolveMemberReturnType(const juce::String& ownerType, const juce::String& memberName) const;
     std::vector<CompletionItem> getGlobalCompletions(const juce::String& prefix, const SymbolTable& symbols) const;
     std::vector<CompletionItem> getMemberCompletionsForType(const juce::String& memberOwnerType) const;
+    std::vector<CompletionItem> getClipsCompletions() const;
 
     static bool isIdentifierChar(juce::juce_wchar c);
     static bool isCodePosition(const juce::String& sourceCode, int caretPos);

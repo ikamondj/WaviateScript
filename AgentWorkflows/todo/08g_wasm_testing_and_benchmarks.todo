@@ -1,0 +1,82 @@
+Task:
+Design and implement correctness tests, regression tests, trap tests, and performance benchmarks for WebAssembly shader execution.
+
+Background:
+The main technical reason for the WebAssembly architecture is to avoid per-sample and per-bin host-to-VM calls. Tests must prove both correctness and the performance shape: the host enters WebAssembly at block granularity. Because this is a real-time audio plugin, tests must also cover allocation boundaries, runtime traps, activation swaps, and fallback behavior.
+
+Dependencies:
+- Depends on `08a_wasm_scope_and_architecture.todo`.
+- Depends on `08b_wasm_block_abi_and_memory.todo`.
+- Depends on `08c_wasm_shader_wrapper_codegen.todo`.
+- Depends on `08d_wasm_toolchain_and_build.todo`.
+- Depends on `08e_wasm_runtime_integration.todo`.
+- Depends on `08f_wasm_state_and_input_mapping.todo`.
+
+Requirements:
+- Inspect these paths before implementing tests:
+  - `Source/PluginProcessor.cpp`
+  - `Source/PluginProcessor.h`
+  - `Source/WasmCompiler.h`
+  - `Source/WasmCompiler.cpp`
+  - `Source/ClangExternalCompiler.h`
+  - `Source/WaviateInput.h`
+  - `Docs/rules.md`
+  - `WaviateScript.jucer`
+  - Existing build/test configuration under `Builds/` and `.github/workflows/`
+- Identify the project's current test harness. If no suitable harness exists, propose the smallest JUCE-compatible test structure before adding broad infrastructure.
+- Build correctness tests around golden outputs:
+  - Sample-only pass-through.
+  - Sample-only generated tone or gain.
+  - Frequency-only pass-through bins.
+  - Frequency-only deterministic bin transform.
+  - Combined sample and frequency shader where sample runs first.
+  - Sidechain-dependent sample shader.
+  - MIDI-dependent sample shader.
+  - Shader state that changes across samples inside one block.
+- Build ABI tests:
+  - Header magic/version validation.
+  - Offset and length bounds.
+  - Alignment.
+  - Memory sizing for small and large blocks.
+  - Feature flag mismatch.
+  - Public build rejection of premium memory features.
+- Build wrapper/codegen tests:
+  - Generated wrapper detects sample-only, frequency-only, both, and neither.
+  - Missing both functions fails.
+  - Wrapper exports block entrypoints.
+  - Wrapper loops are inside WebAssembly, not in host callbacks.
+- Build runtime tests:
+  - Module activation occurs off the audio thread.
+  - Runtime dispatch swap keeps retired instances alive long enough.
+  - Trap during block processing does not crash and triggers fallback.
+  - Oversized block is handled safely.
+  - Memory growth is not required in `processBlock`.
+- Build performance benchmarks:
+  - Native per-sample sample shader baseline.
+  - WebAssembly block-level sample shader.
+  - WebAssembly intentionally-disabled per-sample host-call experiment only if useful as a benchmark guard, not as production behavior.
+  - Frequency block invocation with representative FFT/bin counts.
+  - Startup/compile/instantiate time measured off audio thread.
+  - Per-block processing time and VM entry count.
+- Include a VM entry-count assertion or instrumentation path proving one block entry per block or per larger processing unit.
+- Define acceptable thresholds as initial baselines if strict performance budgets are not available yet.
+
+Acceptance criteria:
+- Tests cover sample-only, frequency-only, and combined shader behavior.
+- Tests prove sample-then-frequency order when both stages exist.
+- Tests verify WebAssembly VM boundary crossing is block-level.
+- Tests cover ABI validation and runtime trap/fallback behavior.
+- Benchmarks compare native function-pointer execution with WebAssembly block execution.
+- No benchmark or test encourages production per-sample/per-bin host-to-VM calls.
+- The test plan can run locally in a documented command or through the existing build system.
+
+Testing:
+- This todo is itself a testing task. The implementing agent should run the new tests or explain why the local environment cannot run them.
+- Include the exact local commands used for tests and benchmarks in the implementation summary.
+- If runtime dependencies are unavailable locally, provide compile-only or fake-runtime coverage and document the gap.
+
+Out of scope:
+- Changing WebAssembly ABI semantics.
+- Changing runtime fallback policy except to make it testable.
+- Adding user-facing docs beyond test instructions.
+- Refactoring unrelated editor or installer code.

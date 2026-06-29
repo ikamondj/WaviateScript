@@ -1,0 +1,231 @@
+The marketplace already has some frontend search work started. Your job is to review what exists, preserve what works, and implement the missing pieces below in a clean, staged way.
+
+Existing / partially implemented context
+
+The marketplace frontend already has, or may already have:
+
+Search by author
+Search by script/instrument name
+Tag-based search
+Tag inclusion filters
+Tag exclusion filters
+Some frontend state for selected included/excluded tags
+Some Postgres persistence layer
+Some server-side validation
+Possibly an existing LLVM-based compile-validation flow
+Possibly a Go serverless backend already connected to Postgres
+
+Do not assume these are complete. Inspect the codebase first, then update only what is missing or incorrect.
+
+Workflow 1: Search UI and tag filtering
+1. Preserve included/excluded tag state
+
+The tag search widget should allow the user to type/search/filter the visible list of tags, but that should not remove existing included/excluded tags from page state.
+
+Meaning:
+
+If a tag is already included, it remains included.
+If a tag is already excluded, it remains excluded.
+Typing in the tag search box only controls what tag options are displayed to the user.
+It should not mutate the underlying inclusion/exclusion filter state unless the user explicitly adds/removes a tag.
+2. Populate tag search from Postgres
+
+Ensure the tag inclusion/exclusion widget is populated from the actual Postgres tags table.
+
+The tags table should be the source of truth.
+
+Do not hardcode tags in the frontend.
+
+3. Author/name search modes
+
+For both author search and name search, add/verify search modes:
+
+Contains
+Begins with / starts with
+Exact match
+
+Default mode should be:
+
+contains
+
+The backend query behavior should match the selected mode.
+
+Workflow 2: Database indexes and persistence layer
+
+Review the persistence layer and migrations.
+
+Ensure indexes are appropriate for the marketplace search patterns:
+
+Script/instrument name search
+Author search
+Tag inclusion
+Tag exclusion
+Tag relationships / join tables
+Sorting if already supported or planned
+
+Optimize for the best tradeoff between:
+
+Fast marketplace reads/searches
+Reasonable upload/insert/update performance
+Low-cost Postgres/serverless operation
+
+Do not over-index blindly. Add indexes intentionally based on actual query patterns.
+
+Workflow 3: Serverless Google OAuth
+
+Implement OAuth for the serverless backend.
+
+Start with:
+
+Google OAuth only
+
+Other OAuth providers can come later.
+
+Requirements:
+
+Users can log in through Google.
+Backend creates/recognizes marketplace accounts.
+Authenticated requests use a non-expired token.
+Upload endpoints require valid auth.
+Keep the OAuth implementation clean enough to support more providers later, but do not implement other providers now.
+Workflow 4: Desktop client login
+
+Add login support to the actual Wavy8Script desktop client.
+
+The client has two forms:
+
+VST
+Standalone
+
+Login must be available in both.
+
+Requirements:
+
+User can authenticate from the desktop client.
+The client stores/uses a valid non-expired token.
+Upload button is only usable when logged in with valid auth.
+Token expiration should be handled gracefully.
+Workflow 5: Upload limits and roles
+
+Implement account restrictions.
+
+Roles/plans:
+
+Standard user
+5 uploads
+Premium user
+200 uploads
+Must be actively subscribed
+Creator role
+Unlimited uploads
+Separate from premium
+Creator does not automatically imply premium
+
+Important:
+
+Creator is a separate account flag/role.
+Premium is subscription/access-related.
+Do not call this “admin.”
+Do not merge creator and premium logic.
+Workflow 6: Upload validation and server-side compile check
+
+When a logged-in user clicks upload:
+
+1. Run server-side validations
+
+Validate things like:
+
+Script length
+Required metadata
+Any existing marketplace constraints
+
+Preserve existing validations if present.
+
+2. Compile the uploaded script server-side
+
+The server should validate that uploaded scripts compile.
+
+The compile path should match the desktop app as closely as possible.
+
+Architecture expectation:
+
+The same C++ code used in the desktop app should be pulled into the Go backend using CMake.
+It should compile to a static library.
+The Go app should call it across a C API boundary.
+The exact same script prelude/postlude used by the desktop app should be applied server-side.
+LLVM compile validation should run on the server.
+
+If this LLVM/server compile validation already exists, verify it is wired into upload correctly.
+
+If it does not exist, implement it.
+
+Only valid, compiling scripts should be accepted into the database.
+
+Workflow 7: Insert real test data
+
+Once auth, roles, restrictions, validation, and compile checks are in place:
+
+Add valid test marketplace entries.
+Ensure uploaded scripts are guaranteed to compile.
+Use this data to test search, tag filters, upload limits, and download flow.
+Workflow 8: Download flow
+
+All marketplace scripts should be open source.
+
+Do not implement encrypted/closed-source download logic.
+
+Marketplace philosophy:
+
+Subscription controls marketplace access.
+Users are not paying individually for other people’s instruments/scripts.
+The marketplace should be open, shared, community-oriented, and remixable.
+Users should be able to inspect and iterate on each other’s ideas.
+Storage format
+
+Marketplace entries may be stored compressed.
+
+Expected flow:
+
+Uploaded script source is compressed/zipped.
+It is stored in the database in an ASCII-safe compressed format.
+On download, backend/client decompresses it.
+Formatting/readability
+
+After decompression, the code should be formatted into a readable standard style.
+
+Goal:
+
+Normalize indentation and whitespace.
+Discourage obfuscated-looking source.
+Make arbitrary user code as transparent and readable as possible.
+Improve safety/debuggability if someone ever finds an exploit path.
+
+This is not “linting” in the sense of rejecting stylistic issues. It is primarily formatting/normalization.
+
+Suggested execution order
+
+Break this into separate agentic workflows if needed:
+
+Inspect current frontend/backend/database implementation.
+Fix marketplace search UI state and search modes.
+Wire tag widget to Postgres tags.
+Review/add database indexes.
+Implement Google OAuth on serverless backend.
+Add desktop login for VST and standalone.
+Implement role/plan upload restrictions: standard, premium, creator.
+Wire upload validation and LLVM compile validation.
+Insert valid test data.
+Implement and test open-source download/decompress/format flow.
+Run end-to-end tests.
+
+Final result should support:
+
+Search by author/name with selectable match modes.
+Tag inclusion/exclusion from database-backed tags.
+Correct indexes.
+Google login.
+Desktop client login.
+Upload limits based on standard/premium/creator.
+Server-side compile validation.
+Open-source compressed source storage.
+Download with decompression and readable formatting.
