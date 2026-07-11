@@ -39,6 +39,22 @@ $cmake = "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/Comm
 & $cmake --build build --config Release --target WaviateScript_Standalone
 ```
 
+Windows debug example with a local LLVM debug build:
+
+```powershell
+$cmake = "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+
+& $cmake -S . -B build-debug -G "Visual Studio 18 2026" -A x64 `
+  -DWAVIATESCRIPT_JUCE_DIR="C:/Users/ikamo/OneDrive/Documents/JuceInstalls/JUCE" `
+  -DLLVM_DIR="C:/src/llvm-dbg/lib/cmake/llvm" `
+  -DClang_DIR="C:/src/llvm-dbg/lib/cmake/clang"
+
+& $cmake --build build-debug --config Debug --target WaviateScript_Standalone
+```
+
+Keep debug and release in separate build directories when they use different
+LLVM package trees.
+
 The standalone executable is emitted to
 `build/WaviateScript_artefacts/bin/Standalone/WaviateScript.exe`.
 On Windows, the CMake build also stages the required LLVM runtime DLLs

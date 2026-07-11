@@ -12,6 +12,8 @@
 
     Public and premium builds use separate build directories because
     WAVIATESCRIPT_PREMIUM is a CMake configure-time option, not a build config.
+    Debug and release also use separate build directories because they can point
+    at different LLVM/Clang package trees.
 
 .PARAMETER Choice
     Optional build choice. When omitted, the script prompts interactively.
@@ -138,6 +140,8 @@ function Get-BuildSettings {
 
     $publicBuildDir = Join-Path $RepoRoot "build-cmake-vs"
     $premiumBuildDir = Join-Path $RepoRoot "build-cmake-vs-premium"
+    $debugPublicBuildDir = Join-Path $RepoRoot "build-cmake-vs-debug"
+    $debugPremiumBuildDir = Join-Path $RepoRoot "build-cmake-vs-debug-premium"
     $premiumSourceDir = Join-Path $RepoRoot "Source\WSPremium"
 
     switch ($SelectedChoice) {
@@ -161,7 +165,7 @@ function Get-BuildSettings {
         "2" {
             return @{
                 Label = "Debug"
-                BuildDir = $publicBuildDir
+                BuildDir = $debugPublicBuildDir
                 Configuration = "Debug"
                 Premium = $false
             }
@@ -169,7 +173,7 @@ function Get-BuildSettings {
         "3" {
             return @{
                 Label = "Debug Premium"
-                BuildDir = $premiumBuildDir
+                BuildDir = $debugPremiumBuildDir
                 Configuration = "Debug"
                 Premium = $true
                 PremiumSourceDir = $premiumSourceDir
@@ -189,6 +193,18 @@ function Require-Path {
     }
 }
 
+function Get-FirstExistingPath {
+    param([string[]]$Candidates)
+
+    foreach ($candidate in $Candidates) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
 $repoRoot = Get-RepoRoot
 $cmake = Find-CMake
 $selectedChoice = Get-MenuChoice -ExistingChoice $Choice
@@ -197,8 +213,24 @@ $settings = Get-BuildSettings -SelectedChoice $selectedChoice -RepoRoot $repoRoo
 Repair-BuildEnvironment
 
 $juceDir = "C:/Users/ikamo/OneDrive/Documents/JuceInstalls/JUCE"
-$llvmDir = "C:/Program Files/LLVM/lib/cmake/llvm"
-$clangDir = "C:/Program Files/LLVM/lib/cmake/clang"
+
+if ($settings.Configuration -eq "Debug") {
+    $llvmDir = Get-FirstExistingPath @(
+        "C:/src/llvm-dbg/install/lib/cmake/llvm",
+        "C:/src/llvm-dbg/build/lib/cmake/llvm"
+    )
+    $clangDir = Get-FirstExistingPath @(
+        "C:/src/llvm-dbg/install/lib/cmake/clang",
+        "C:/src/llvm-dbg/build/lib/cmake/clang"
+    )
+} else {
+    $llvmDir = Get-FirstExistingPath @(
+        "C:/Program Files/LLVM/lib/cmake/llvm"
+    )
+    $clangDir = Get-FirstExistingPath @(
+        "C:/Program Files/LLVM/lib/cmake/clang"
+    )
+}
 
 Require-Path -Path $juceDir -Message "JUCE checkout not found at '$juceDir'."
 Require-Path -Path $llvmDir -Message "LLVM CMake package not found at '$llvmDir'."

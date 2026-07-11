@@ -75,17 +75,69 @@ if(WAVIATESCRIPT_PREMIUM)
     endif()
 endif()
 
+function(waviate_first_existing_path output_variable)
+    foreach(candidate IN LISTS ARGN)
+        if(candidate AND EXISTS "${candidate}")
+            set("${output_variable}" "${candidate}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+endfunction()
+
+if(WIN32)
+    if(NOT LLVM_DIR)
+        waviate_first_existing_path(WAVIATESCRIPT_DETECTED_LLVM_DIR
+            "$ENV{LLVM_DIR}"
+            "C:/src/llvm-dbg/install/lib/cmake/llvm"
+            "C:/src/llvm-dbg/build/lib/cmake/llvm"
+            "$ENV{ProgramFiles}/LLVM/lib/cmake/llvm"
+            "$ENV{ProgramW6432}/LLVM/lib/cmake/llvm"
+        )
+        if(WAVIATESCRIPT_DETECTED_LLVM_DIR)
+            set(LLVM_DIR "${WAVIATESCRIPT_DETECTED_LLVM_DIR}" CACHE PATH "Path to LLVMConfig.cmake" FORCE)
+        endif()
+    endif()
+
+    if(NOT Clang_DIR)
+        waviate_first_existing_path(WAVIATESCRIPT_DETECTED_CLANG_DIR
+            "$ENV{Clang_DIR}"
+            "C:/src/llvm-dbg/install/lib/cmake/clang"
+            "C:/src/llvm-dbg/build/lib/cmake/clang"
+            "$ENV{ProgramFiles}/LLVM/lib/cmake/clang"
+            "$ENV{ProgramW6432}/LLVM/lib/cmake/clang"
+        )
+        if(WAVIATESCRIPT_DETECTED_CLANG_DIR)
+            set(Clang_DIR "${WAVIATESCRIPT_DETECTED_CLANG_DIR}" CACHE PATH "Path to ClangConfig.cmake" FORCE)
+        endif()
+    endif()
+endif()
+
 find_package(LLVM CONFIG REQUIRED)
 find_package(Clang CONFIG REQUIRED)
 
 message(STATUS "Using LLVM ${LLVM_PACKAGE_VERSION} from ${LLVM_DIR}")
 message(STATUS "Using Clang package from ${Clang_DIR}")
 
+set(WAVIATESCRIPT_LLVM_HAS_DEBUG_CONFIG OFF)
+if(TARGET LLVMSupport)
+    get_target_property(WAVIATESCRIPT_LLVM_IMPORTED_CONFIGS LLVMSupport IMPORTED_CONFIGURATIONS)
+    if(WAVIATESCRIPT_LLVM_IMPORTED_CONFIGS)
+        list(FIND WAVIATESCRIPT_LLVM_IMPORTED_CONFIGS DEBUG WAVIATESCRIPT_LLVM_DEBUG_CONFIG_INDEX)
+        if(NOT WAVIATESCRIPT_LLVM_DEBUG_CONFIG_INDEX EQUAL -1)
+            set(WAVIATESCRIPT_LLVM_HAS_DEBUG_CONFIG ON)
+        endif()
+    endif()
+endif()
+
 function(waviate_configure_msvc_llvm_compat target_name)
     if(MSVC)
-        # The packaged Windows LLVM/Clang binaries are built against the release CRT.
-        set_property(TARGET "${target_name}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
-        target_compile_definitions("${target_name}" PRIVATE $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>)
+        if(WAVIATESCRIPT_LLVM_HAS_DEBUG_CONFIG)
+            set_property(TARGET "${target_name}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+        else()
+            # The packaged Windows LLVM/Clang binaries are built against the release CRT.
+            set_property(TARGET "${target_name}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+            target_compile_definitions("${target_name}" PRIVATE $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>)
+        endif()
     endif()
 endfunction()
 

@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "WaviateScript Debug",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build-cmake-vs-debug\\WaviateScript_artefacts\\bin\\Standalone\\WaviateScript.exe",
+      "cwd": "${workspaceFolder}\\build-cmake-vs-debug\\WaviateScript_artefacts\\bin\\Standalone",
+      "preLaunchTask": "Build WaviateScript Debug",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": "WaviateScript Debug Premium",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build-cmake-vs-debug-premium\\WaviateScript_artefacts\\bin\\Standalone\\WaviateScript.exe",
+      "cwd": "${workspaceFolder}\\build-cmake-vs-debug-premium\\WaviateScript_artefacts\\bin\\Standalone",
+      "preLaunchTask": "Build WaviateScript Debug Premium",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": "WaviateScript Release",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build-cmake-vs\\WaviateScript_artefacts\\bin\\Standalone\\WaviateScript.exe",
+      "cwd": "${workspaceFolder}\\build-cmake-vs\\WaviateScript_artefacts\\bin\\Standalone",
+      "preLaunchTask": "Build WaviateScript Release",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": "WaviateScript Release Premium",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build-cmake-vs-premium\\WaviateScript_artefacts\\bin\\Standalone\\WaviateScript.exe",
+      "cwd": "${workspaceFolder}\\build-cmake-vs-premium\\WaviateScript_artefacts\\bin\\Standalone",
+      "preLaunchTask": "Build WaviateScript Release Premium",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    }
+  ]
+}

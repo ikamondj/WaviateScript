@@ -1,0 +1,85 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build WaviateScript Debug",
+      "type": "shell",
+      "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+      "args": [
+        "--build",
+        "build-cmake-vs-debug",
+        "--config",
+        "Debug",
+        "--target",
+        "WaviateScript_Standalone"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Build WaviateScript Debug Premium",
+      "type": "shell",
+      "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+      "args": [
+        "--build",
+        "build-cmake-vs-debug-premium",
+        "--config",
+        "Debug",
+        "--target",
+        "WaviateScript_Standalone"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Build WaviateScript Release",
+      "type": "shell",
+      "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+      "args": [
+        "--build",
+        "build-cmake-vs",
+        "--config",
+        "Release",
+        "--target",
+        "WaviateScript_Standalone"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Build WaviateScript Release Premium",
+      "type": "shell",
+      "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+      "args": [
+        "--build",
+        "build-cmake-vs-premium",
+        "--config",
+        "Release",
+        "--target",
+        "WaviateScript_Standalone"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    }
+  ]
+}
