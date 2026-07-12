@@ -19,8 +19,14 @@ namespace
     constexpr const char* recentFilesSettingKey = "recentFiles";
     constexpr const char* codeCompletionsSettingKey = "codeCompletionsEnabled";
     constexpr const char* fuelLimitPresetSettingKey = "fuelLimitPreset";
+    constexpr const char* fftSizeSettingKey = "frequencyDomainFftSize";
+    constexpr const char* fftBinLimitSettingKey = "frequencyDomainBinLimit";
+    constexpr const char* fftWindowSettingKey = "frequencyDomainWindow";
     constexpr int recentFileItemBase = 2000;
     constexpr int fuelLimitItemBase = 3000;
+    constexpr int fftSizeItemBase = 4000;
+    constexpr int fftBinLimitItemBase = 5000;
+    constexpr int fftWindowItemBase = 6000;
     constexpr int maxRecentFileCount = 10;
 
     constexpr std::array<waviate::compile::FuelLimitPreset, 5> fuelLimitMenuPresets {
@@ -30,6 +36,8 @@ namespace
         waviate::compile::FuelLimitPreset::High,
         waviate::compile::FuelLimitPreset::Massive
     };
+    constexpr std::array<int, 6> fftSizes { 256, 512, 1024, 2048, 4096, 8192 };
+    constexpr std::array<int, 6> fftBinLimits { 0, 64, 128, 256, 512, 1024 };
 }
 
 //==============================================================================
@@ -129,6 +137,11 @@ WaviateScriptAudioProcessorEditor::WaviateScriptAudioProcessorEditor(WaviateScri
                 juce::String(waviate::compile::fuelLimitPresetId(waviate::compile::FuelLimitPreset::Medium).data())).toStdString()),
         false);
     setCompletionsEnabled(userSettings->getBoolValue(codeCompletionsSettingKey, true), false);
+    audioProcessor.setFrequencyDomainSettings({
+        userSettings->getIntValue(fftSizeSettingKey, 1024),
+        userSettings->getIntValue(fftBinLimitSettingKey, 0),
+        static_cast<WaviateScriptAudioProcessor::FftWindow>(userSettings->getIntValue(fftWindowSettingKey, 0))
+    });
     selectTheme(userSettings->getValue("theme", WaviateThemes::fallback().id), false);
     updateMarketplaceButtons();
     loadLastOpenedFileIfAvailable();
@@ -336,6 +349,10 @@ void WaviateScriptAudioProcessorEditor::showToolsMenu()
 
     juce::PopupMenu toolsMenu;
     juce::PopupMenu fuelLimitMenu;
+    juce::PopupMenu frequencyMenu;
+    juce::PopupMenu fftSizeMenu;
+    juce::PopupMenu binLimitMenu;
+    juce::PopupMenu windowMenu;
 
     const auto activeFuelLimit = audioProcessor.getFuelLimitPreset();
     for (int i = 0; i < static_cast<int>(fuelLimitMenuPresets.size()); ++i)
@@ -351,6 +368,25 @@ void WaviateScriptAudioProcessorEditor::showToolsMenu()
     toolsMenu.addItem(completionsItemId, "Completions", true, codeEditor.areCompletionsEnabled());
     toolsMenu.addSubMenu("Fuel Limits", fuelLimitMenu);
 
+    const auto frequencySettings = audioProcessor.getFrequencyDomainSettings();
+    for (int i = 0; i < static_cast<int>(fftSizes.size()); ++i)
+        fftSizeMenu.addItem(fftSizeItemBase + i, juce::String(fftSizes[static_cast<size_t>(i)]) + " samples",
+                            true, frequencySettings.fftSize == fftSizes[static_cast<size_t>(i)]);
+    for (int i = 0; i < static_cast<int>(fftBinLimits.size()); ++i)
+    {
+        const int limit = fftBinLimits[static_cast<size_t>(i)];
+        binLimitMenu.addItem(fftBinLimitItemBase + i, limit == 0 ? "All bins" : juce::String(limit) + " bins",
+                             true, frequencySettings.binLimit == limit);
+    }
+    windowMenu.addItem(fftWindowItemBase, "Rectangular", true,
+                       frequencySettings.window == WaviateScriptAudioProcessor::FftWindow::rectangular);
+    windowMenu.addItem(fftWindowItemBase + 1, "Hann", true,
+                       frequencySettings.window == WaviateScriptAudioProcessor::FftWindow::hann);
+    frequencyMenu.addSubMenu("Time Window Size", fftSizeMenu);
+    frequencyMenu.addSubMenu("Processed Bins", binLimitMenu);
+    frequencyMenu.addSubMenu("Window Function", windowMenu);
+    toolsMenu.addSubMenu("Frequency Domain", frequencyMenu);
+
     toolsMenu.showMenuAsync(juce::PopupMenu::Options()
         .withTargetComponent(&toolsMenuButton),
         [this](int result) {
@@ -360,9 +396,35 @@ void WaviateScriptAudioProcessorEditor::showToolsMenu()
                 return;
             }
 
-            const auto fuelLimitIndex = result - fuelLimitItemBase;
-            if (fuelLimitIndex >= 0 && fuelLimitIndex < static_cast<int>(fuelLimitMenuPresets.size()))
-                setFuelLimitPreset(fuelLimitMenuPresets[static_cast<size_t>(fuelLimitIndex)], true);
+            auto frequencySettings = audioProcessor.getFrequencyDomainSettings();
+            const auto fftSizeIndex = result - fftSizeItemBase;
+            const auto binLimitIndex = result - fftBinLimitItemBase;
+            if (fftSizeIndex >= 0 && fftSizeIndex < static_cast<int>(fftSizes.size()))
+                frequencySettings.fftSize = fftSizes[static_cast<size_t>(fftSizeIndex)];
+            else if (binLimitIndex >= 0 && binLimitIndex < static_cast<int>(fftBinLimits.size()))
+                frequencySettings.binLimit = fftBinLimits[static_cast<size_t>(binLimitIndex)];
+            else if (result == fftWindowItemBase || result == fftWindowItemBase + 1)
+                frequencySettings.window = result == fftWindowItemBase
+                    ? WaviateScriptAudioProcessor::FftWindow::rectangular
+                    : WaviateScriptAudioProcessor::FftWindow::hann;
+            else
+            {
+                const auto fuelLimitIndex = result - fuelLimitItemBase;
+                if (fuelLimitIndex >= 0 && fuelLimitIndex < static_cast<int>(fuelLimitMenuPresets.size()))
+                    setFuelLimitPreset(fuelLimitMenuPresets[static_cast<size_t>(fuelLimitIndex)], true);
+                return;
+            }
+
+            audioProcessor.setFrequencyDomainSettings(frequencySettings);
+            if (userSettings != nullptr)
+            {
+                userSettings->setValue(fftSizeSettingKey, frequencySettings.fftSize);
+                userSettings->setValue(fftBinLimitSettingKey, frequencySettings.binLimit);
+                userSettings->setValue(fftWindowSettingKey, static_cast<int>(frequencySettings.window));
+                userSettings->saveIfNeeded();
+            }
+            return;
+
         });
 }
 

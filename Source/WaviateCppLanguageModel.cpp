@@ -511,10 +511,28 @@ struct WaviateSampleInput {
 
 struct WaviateSampleStateWriter {};
 
-struct WaviateComplex {
-    float real;
-    float imag;
+template <typename T>
+struct WaviateBasicComplex {
+    T real;
+    T imag;
+    constexpr WaviateBasicComplex(T realIn = T{}, T imagIn = T{}) : real(realIn), imag(imagIn) {}
+    constexpr WaviateBasicComplex operator+(WaviateBasicComplex rhs) const { return { real + rhs.real, imag + rhs.imag }; }
+    constexpr WaviateBasicComplex operator-(WaviateBasicComplex rhs) const { return { real - rhs.real, imag - rhs.imag }; }
+    constexpr WaviateBasicComplex operator*(WaviateBasicComplex rhs) const {
+        return { real * rhs.real - imag * rhs.imag, real * rhs.imag + imag * rhs.real };
+    }
+    constexpr WaviateBasicComplex operator/(WaviateBasicComplex rhs) const {
+        const T d = rhs.real * rhs.real + rhs.imag * rhs.imag;
+        return { (real * rhs.real + imag * rhs.imag) / d, (imag * rhs.real - real * rhs.imag) / d };
+    }
+    constexpr WaviateBasicComplex operator*(T scalar) const { return { real * scalar, imag * scalar }; }
+    constexpr WaviateBasicComplex operator/(T scalar) const { return { real / scalar, imag / scalar }; }
+    constexpr WaviateBasicComplex conjugate() const { return { real, -imag }; }
+    constexpr T norm() const { return real * real + imag * imag; }
 };
+using fcomplex = WaviateBasicComplex<float>;
+using dcomplex = WaviateBasicComplex<double>;
+using WaviateComplex = fcomplex;
 
 struct WaviateFrequencyInput {
     int32_t sampleWidth;
@@ -660,6 +678,32 @@ inline bool isinf(double x) { return __builtin_isinf(x) != 0; }
 inline bool isnan(double x) { return __builtin_isnan(x) != 0; }
 inline bool isnormal(double x) { return __builtin_isnormal(x) != 0; }
 inline bool signbit(double x) { return __builtin_signbit(x) != 0; }
+
+namespace waviate_complex {
+    template <typename T> inline T abs(WaviateBasicComplex<T> v) { return __builtin_sqrt(v.norm()); }
+    template <typename T> inline T arg(WaviateBasicComplex<T> v) { return __builtin_atan2(v.imag, v.real); }
+    template <typename T> inline WaviateBasicComplex<T> conj(WaviateBasicComplex<T> v) { return v.conjugate(); }
+    template <typename T> inline WaviateBasicComplex<T> polar(T magnitude, T phase) {
+        return { magnitude * __builtin_cos(phase), magnitude * __builtin_sin(phase) };
+    }
+    template <typename T> inline WaviateBasicComplex<T> exp(WaviateBasicComplex<T> v) {
+        const T scale = __builtin_exp(v.real);
+        return { scale * __builtin_cos(v.imag), scale * __builtin_sin(v.imag) };
+    }
+    template <typename T> inline WaviateBasicComplex<T> log(WaviateBasicComplex<T> v) {
+        return { __builtin_log(abs(v)), arg(v) };
+    }
+    template <typename T> inline WaviateBasicComplex<T> pow(WaviateBasicComplex<T> base, T exponent) {
+        return polar(__builtin_pow(abs(base), exponent), arg(base) * exponent);
+    }
+    template <typename T> inline WaviateBasicComplex<T> sin(WaviateBasicComplex<T> v) {
+        return { __builtin_sin(v.real) * __builtin_cosh(v.imag), __builtin_cos(v.real) * __builtin_sinh(v.imag) };
+    }
+    template <typename T> inline WaviateBasicComplex<T> cos(WaviateBasicComplex<T> v) {
+        return { __builtin_cos(v.real) * __builtin_cosh(v.imag), -__builtin_sin(v.real) * __builtin_sinh(v.imag) };
+    }
+    template <typename T> inline WaviateBasicComplex<T> tan(WaviateBasicComplex<T> v) { return sin(v) / cos(v); }
+}
 
 inline constexpr double HUGE_VAL = __builtin_huge_val();
 inline constexpr float HUGE_VALF = __builtin_huge_valf();

@@ -16,6 +16,8 @@
 #include "WaviateSafety.h"
 #include <array>
 #include <atomic>
+#include <memory>
+#include <vector>
 
 #ifdef WAV_SCRIPT_PREMIUM
 #include "GameControllerInterface.h"
@@ -32,6 +34,15 @@ typedef float (*SampleWiseProcessor)(const WaviateSampleInput*, void* state);
 class WaviateScriptAudioProcessor  : public juce::AudioProcessor
 {
 public:
+    enum class FftWindow : int { rectangular, hann };
+
+    struct FrequencyDomainSettings
+    {
+        int fftSize = 1024;
+        int binLimit = 0; // Zero processes every positive-frequency bin.
+        FftWindow window = FftWindow::rectangular;
+    };
+
     struct CompilationActivationResult
     {
         bool succeeded = false;
@@ -81,6 +92,8 @@ public:
     CompilationActivationResult compileAndActivateSource(const juce::String& extension, const juce::String& source);
     void setProcessingEnabled(bool shouldBeEnabled);
     bool isProcessingEnabled() const;
+    void setFrequencyDomainSettings(FrequencyDomainSettings settings) noexcept;
+    [[nodiscard]] FrequencyDomainSettings getFrequencyDomainSettings() const noexcept;
 
     //==============================================================================
     int getNumPrograms() override;
@@ -116,6 +129,30 @@ public:
 	SpscEventQueue<OSCInputEvent, oscCap, true> oscEventsQueue;
 #endif
 private:
+    struct AudioBlockContext;
+    struct FrequencyWorkspace;
+
+    inline void setupBlockData(AudioBlockContext&) noexcept;
+    inline void setupCommonBlockData(AudioBlockContext&) noexcept;
+    inline void setupNonPremiumCommonBlockData(AudioBlockContext&) noexcept;
+    inline void setupStandaloneInputData(AudioBlockContext&) noexcept;
+    inline void setupNonPremiumStandaloneInputData(AudioBlockContext&) noexcept;
+#ifdef WAV_SCRIPT_PREMIUM
+    inline void setupPremiumCommonBlockData(AudioBlockContext&) noexcept;
+    inline void setupPremiumStandaloneInputData(AudioBlockContext&) noexcept;
+    inline void setupDawInputData(AudioBlockContext&) noexcept;
+#endif
+    inline bool processSamples(AudioBlockContext&, juce::MidiBuffer&) noexcept;
+    inline void setupFrequencyStep(AudioBlockContext&) noexcept;
+    inline void setupCommonFrequencyBlockData(AudioBlockContext&) noexcept;
+    inline void setupStandaloneFrequencyBlockData(AudioBlockContext&) noexcept;
+#ifdef WAV_SCRIPT_PREMIUM
+    inline void setupDawFrequencyBlockData(AudioBlockContext&) noexcept;
+#endif
+    inline bool processFrequencyBins(AudioBlockContext&) noexcept;
+    inline void pushVisualizerSamples(const AudioBlockContext&);
+    void prepareFrequencyWorkspace(int channelCount);
+
     void InitializeMidiMessageLookup(size_t blockSize);
     void storeRuntimeControls(const ShaderRuntimeControls& runtime) noexcept;
     [[nodiscard]] ShaderRuntimeControls loadRuntimeControls() const noexcept;
@@ -133,6 +170,9 @@ private:
     std::atomic<bool> processingEnabled { true };
     std::atomic<bool> scriptOverBudget { false };
     std::atomic<int> fuelLimitPresetIndex { static_cast<int>(waviate::compile::FuelLimitPreset::Medium) };
+    std::atomic<int> requestedFftSize { 1024 };
+    std::atomic<int> requestedBinLimit { 0 };
+    std::atomic<int> requestedFftWindow { static_cast<int>(FftWindow::rectangular) };
     std::atomic<ShaderSetFuelBudgetFn> activeSetFuelBudget { nullptr };
     std::atomic<ShaderGetFuelRemainingFn> activeGetFuelRemaining { nullptr };
     std::atomic<ShaderGetFuelExhaustedFn> activeGetFuelExhausted { nullptr };
@@ -140,6 +180,7 @@ private:
     waviate::compile::Pipeline compilePipeline;
     waviate::safety::EphemeralArena shaderArena;
     std::vector<ManualClipInfo> manualClips;
+    std::unique_ptr<FrequencyWorkspace> frequencyWorkspace;
 
     class AudioLoaderThread;
     std::unique_ptr<AudioLoaderThread> audioLoaderThread;

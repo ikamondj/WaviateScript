@@ -225,6 +225,7 @@ set(WAVIATESCRIPT_CORE_SOURCES
     Source/WaviateShaderSerializer.cpp
     Source/WaviateShaderSerializer.h
     Source/WaviateInput.h
+    Source/WaviateComplex.h
     Source/WaviateAudio.cpp
     Source/WaviateAudio.h
     Source/WaviateFuelInstrumentation.cpp
@@ -287,6 +288,7 @@ target_sources(WaviateScript
         Source/AudioClipsPanel.h
         Source/PluginProcessor.cpp
         Source/PluginProcessor.h
+        Source/AudioProcessingFlow.inl
 )
 
 # target_compile_features(WaviateScript PRIVATE cxx_std_20)
@@ -316,6 +318,7 @@ target_link_libraries(WaviateScript
         juce::juce_audio_utils
         juce::juce_core
         juce::juce_data_structures
+        juce::juce_dsp
         juce::juce_events
         juce::juce_graphics
         juce::juce_gui_basics

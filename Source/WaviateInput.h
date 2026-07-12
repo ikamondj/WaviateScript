@@ -9,6 +9,7 @@
 */
 #include <cstdbool>
 #include <cstdint>
+#include "WaviateComplex.h"
 
 #pragma once
 
@@ -57,11 +58,6 @@ struct WaviateSampleInput {
 
 struct WaviateSampleStateWriter {
 
-};
-
-struct WaviateComplex {
-    float real;
-    float imag;
 };
 
 struct WaviateFrequencyInput {

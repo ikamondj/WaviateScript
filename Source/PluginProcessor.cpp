@@ -378,6 +378,8 @@ void WaviateScriptAudioProcessor::prepareToPlay (double sampleRate, int samplesP
 
     if (samplesPerBlock > 0 && static_cast<size_t>(samplesPerBlock) > midiBlockMessages.size())
         InitializeMidiMessageLookup(static_cast<size_t>(samplesPerBlock));
+
+    prepareFrequencyWorkspace(std::max(getTotalNumInputChannels(), getTotalNumOutputChannels()));
 }
 
 
@@ -525,202 +527,88 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
 
 
 
+#include "AudioProcessingFlow.inl"
+
 void WaviateScriptAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                                juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-
-    const int blockNumSamples        = buffer.getNumSamples();
-
-    if (blockNumSamples <= 0)
+    if (buffer.getNumSamples() <= 0)
         return;
 
-    if (static_cast<size_t>(blockNumSamples) > midiBlockMessages.size())
-        InitializeMidiMessageLookup(static_cast<size_t>(blockNumSamples));
+    const auto sampleCount = static_cast<size_t>(buffer.getNumSamples());
+    if (sampleCount > midiBlockMessages.size())
+        InitializeMidiMessageLookup(sampleCount);
+    for (size_t sample = 0; sample < sampleCount; ++sample)
+        midiBlockMessages[sample].clear();
 
-    for (int samp = 0; samp < blockNumSamples; ++samp)
-        midiBlockMessages[static_cast<size_t>(samp)].clear();
-
-    // Correct JUCE multi-bus handling:
-    auto mainIn  = getBusBuffer(buffer, true,  0);
-    auto mainOut = getBusBuffer(buffer, false, 0);
-
-    bool sidechainEnabled = false;
-
-#ifdef WAV_SCRIPT_PREMIUM
-    {
-		OSCInputEvent oscEvent;
-        while (oscEventsQueue.popOne(oscEvent)) {
-            oscInterface.receiveEventOnAudioThread(oscEvent);
-        }
-		GameControllerEvent gamepadEvent;
-        while (gamepadEventsQueue.popOne(gamepadEvent)) {
-            gameControllerInterface.receiveEventOnAudioThread(gamepadEvent);
-        }
-    }
-    
-    
-#endif
-
-    if (getBusCount(true) > 1)
-    {
-        if (auto* bus = getBus(true, 1))
-            sidechainEnabled = bus->isEnabled();
-    }
-    juce::AudioBuffer<float>* sideInPtr = nullptr;
-    juce::AudioBuffer<float> sideInBuffer;
-
-    if (sidechainEnabled)
-    {
-        sideInBuffer = getBusBuffer(buffer, true, 1);
-        // If the host provides it, sideIn.getNumSamples() should match.
-        sideInPtr = &sideInBuffer;
-    }
-
-    wavInput->blockSize = buffer.getNumSamples();
-    wavInput->sampleRate = static_cast<float>(currentSampleRate);
-    wavInput->samplesSinceAppStart = samplesSinceAppStart;
-    wavInput->sampleInBlock = 0;
-    wavInput->sustain = sustainDown;
-    wavInput->previousSamples = nullptr;
-    wavInput->sampleMemoryCount = 0;
-
-    // Determine effective input channels on the MAIN input bus
-    const int mainInputCh = mainIn.getNumChannels();
-    const int mainOutputCh = mainOut.getNumChannels();
-
-    auto pushVisualizerSamples = [&]()
-    {
-        std::vector<float> samplesPush;
-        samplesPush.reserve(mainOutputCh);
-        for (int i = 0; i < blockNumSamples && mainOutputCh > 0; i += 1)
-        {
-            samplesPush.clear();
-            for (int j = 0; j < mainOutputCh; j += 1)
-                samplesPush.push_back(mainOut.getSample(j, i));
-
-            visualizer.pushSample(samplesPush.data(), mainOutputCh);
-        }
-    };
+    AudioBlockContext context { buffer };
+    setupBlockData(context);
 
     if (! processingEnabled.load(std::memory_order_acquire))
     {
-        mainOut.clear();
-        samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
-        pushVisualizerSamples();
-        return;
+        context.mainOut.clear();
     }
-
-    // Initialize midi arrays if needed (do this in constructor ideally)
-    // std::memset(wavInput->midiNote, 0, sizeof(wavInput->midiNote));
-    // std::memset(wavInput->midiControllersCC, 0, sizeof(wavInput->midiControllersCC));
-
-    // Point WavInput at the *whole-block* arrays (pointers stable); DSP should use startSample offset.
-    wavInput->inputDeviceSamples = mainIn.getArrayOfReadPointers();
-    wavInput->currentSampleData = mainOut.getArrayOfWritePointers();
-    wavInput->inputChannelCount = mainInputCh;
-    wavInput->channelCount = mainOutputCh;
-
-    if (sideInPtr != nullptr && sideInPtr->getNumChannels() > 0)
+    else if (! processSamples(context, midiMessages))
     {
-        for (int c = 0; c < sideInPtr->getNumChannels(); c += 1) {
-            wavInput->inputSideChainSamples = sideInPtr->getArrayOfReadPointers();
-        }
-
-        wavInput->sideChainChannelCount = sideInPtr->getNumChannels();
+        context.mainOut.clear();
+        deactivateActiveScript(true);
     }
     else
     {
-        wavInput->inputSideChainSamples = nullptr;
-        wavInput->sideChainChannelCount = 0;
-    }
-
-    // Ensure outputs beyond inputs are cleared for this segment
-    for (int ch = mainInputCh; ch < mainOutputCh; ++ch)
-        mainOut.clear(ch, 0, blockNumSamples);
-
-    for (const auto& midiMessage : midiMessages) {
-        const int samp = midiMessage.samplePosition;
-        if (samp >= 0 && samp < blockNumSamples)
-            midiBlockMessages[static_cast<size_t>(samp)].push_back(midiMessage.getMessage());
-    }
-
-    // ----- SampleWise Processing (segment) -----
-    SampleShader sampleShader = activeSampleShader.load(std::memory_order_acquire);
-    if (sampleShader) {
-        const auto runtime = loadRuntimeControls();
-        if (runtime.hasFuelMetering())
+        setupFrequencyStep(context);
+        if (! processFrequencyBins(context))
         {
-            runtime.beginBlock(waviate::compile::calculateFuelBudget(
-                getFuelLimitPreset(),
-                blockNumSamples,
-                mainOutputCh));
-        }
-
-        bool scriptTrapped = false;
-
-        for (int samp = 0; samp < blockNumSamples; ++samp)
-        {
-            const uint64_t absoluteSample = samplesSinceAppStart + static_cast<uint64_t>(samp);
-            auto& sampleMidiMessages = midiBlockMessages[static_cast<size_t>(samp)];
-
-            for (const auto& midiMessage : sampleMidiMessages) {
-                applyMidiToState(
-                    midiMessage,
-                    wavInput->midiNoteOn,
-                    wavInput->midiCCValue,
-                    wavInput->sampleWhenMidiNoteOn,
-                    wavInput->sampleWhenMidiNoteOff,
-                    wavInput->sampleWhenCCValueChanged,
-                    sustainDown,
-                    std::span<bool, midiStateCount>(wavInput->sustainDefer, midiStateCount),
-                    absoluteSample);
-            }
-
-            wavInput->sampleInBlock = samp;
-            wavInput->samplesSinceAppStart = absoluteSample;
-            wavInput->sustain = sustainDown;
-
-            for (int ch = 0; ch < mainOutputCh; ++ch)
-            {
-                wavInput->channel = static_cast<uint8_t>(ch);
-                {
-                    waviate::safety::ScopedArenaPass arenaPass(shaderArena);
-                    mainOut.getWritePointer(ch)[samp] = sampleShader(wavInput.get(), nullptr);
-                }
-
-                if (runtime.isFuelExhausted())
-                {
-                    scriptTrapped = true;
-                    break;
-                }
-            }
-
-            sampleMidiMessages.clear();
-
-            if (scriptTrapped)
-                break;
-        }
-
-        if (scriptTrapped)
-        {
-            mainOut.clear();
+            context.mainOut.clear();
             deactivateActiveScript(true);
-            samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
-            pushVisualizerSamples();
-            return;
         }
     }
 
-    FrequencyShader freqShader = activeFrequencyShader.load(std::memory_order_acquire);
-    if (freqShader) {
+    samplesSinceAppStart += static_cast<uint64_t>(context.sampleCount);
+    pushVisualizerSamples(context);
+}
 
-    }
+void WaviateScriptAudioProcessor::prepareFrequencyWorkspace(int channelCount)
+{
+    auto workspace = std::make_unique<FrequencyWorkspace>();
+    for (int order = FrequencyWorkspace::minimumOrder; order <= FrequencyWorkspace::maximumOrder; ++order)
+        workspace->plans[static_cast<size_t>(order - FrequencyWorkspace::minimumOrder)] = std::make_unique<juce::dsp::FFT>(order);
 
-    samplesSinceAppStart += static_cast<uint64_t>(blockNumSamples);
+    const auto channels = static_cast<size_t>(std::max(1, channelCount));
+    const auto transformSize = static_cast<size_t>(FrequencyWorkspace::maximumSize * 2);
+    const auto spectrumSize = static_cast<size_t>(FrequencyWorkspace::maximumSize / 2 + 1);
+    workspace->inputTransform.assign(channels, std::vector<float>(transformSize));
+    workspace->outputTransform.assign(channels, std::vector<float>(transformSize));
+    workspace->sidechainTransform.assign(channels, std::vector<float>(transformSize));
+    workspace->inputSpectrum.assign(channels, std::vector<WaviateComplex>(spectrumSize));
+    workspace->outputSpectrum.assign(channels, std::vector<WaviateComplex>(spectrumSize));
+    workspace->sidechainSpectrum.assign(channels, std::vector<WaviateComplex>(spectrumSize));
+    workspace->inputPointers.resize(channels);
+    workspace->outputPointers.resize(channels);
+    workspace->sidechainPointers.resize(channels);
+    workspace->visualizerFrame.resize(channels);
+    frequencyWorkspace = std::move(workspace);
+}
 
-    pushVisualizerSamples();
+void WaviateScriptAudioProcessor::setFrequencyDomainSettings(FrequencyDomainSettings settings) noexcept
+{
+    const int clampedSize = juce::jlimit(1 << FrequencyWorkspace::minimumOrder,
+                                         1 << FrequencyWorkspace::maximumOrder,
+                                         settings.fftSize);
+    const int order = juce::roundToInt(std::log2(static_cast<double>(clampedSize)));
+    requestedFftSize.store(1 << order, std::memory_order_release);
+    requestedBinLimit.store(std::max(0, settings.binLimit), std::memory_order_release);
+    requestedFftWindow.store(static_cast<int>(settings.window), std::memory_order_release);
+}
 
+WaviateScriptAudioProcessor::FrequencyDomainSettings
+WaviateScriptAudioProcessor::getFrequencyDomainSettings() const noexcept
+{
+    FrequencyDomainSettings settings;
+    settings.fftSize = requestedFftSize.load(std::memory_order_acquire);
+    settings.binLimit = requestedBinLimit.load(std::memory_order_acquire);
+    settings.window = static_cast<FftWindow>(requestedFftWindow.load(std::memory_order_acquire));
+    return settings;
 }
 
 
