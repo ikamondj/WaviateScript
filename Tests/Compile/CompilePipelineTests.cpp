@@ -22,7 +22,7 @@ WAVIATE_TEST_CASE(CompilePipelineSmokeTest, "Compile Pipeline Smoke", "Compile")
     const auto inlineResult = compileSource("inline_passthrough", R"wlsl(
 float SampleProcess(const WaviateSample& wav)
 {
-    return wav.getIncomingSample();
+    return wav.incomingSample();
 }
 )wlsl");
     expectCompileSuccess(*this, inlineResult);
@@ -34,6 +34,18 @@ float SampleProcess(const WaviateSample& wav)
     expectCompileSuccess(*this, fixtureResult);
     if (fixtureResult)
         WAVIATE_EXPECT(std::abs(invokeSample(fixtureResult, { .incomingSample = -0.125f }) + 0.125f) <= epsilon);
+
+    WAVIATE_TEST("compile frequency shader through accessor-only complex API");
+    const auto frequencyResult = compileSource("frequency_complex_accessors", R"wlsl(
+WaviateComplex FrequencyProcess(WaviateFrequency& wav)
+{
+    const auto input = wav.incomingSample();
+    const auto rebuilt = waviate_complex::polar(input.magnitude(), input.phase());
+    return WaviateComplex(rebuilt.real() * wav.midiNotePhase(69), rebuilt.imaginary());
+}
+)wlsl");
+    expectCompileSuccess(*this, frequencyResult);
+    WAVIATE_EXPECT(frequencyResult.frequencyShader != nullptr);
 
     WAVIATE_TEST("capture compile failures cleanly");
     const auto failureResult = compileSource("broken_shader", "float SampleProcess(const WaviateSample& wav) {");
@@ -71,9 +83,9 @@ float SampleProcess(const WaviateSample& wav)
 
     WAVIATE_TEST("audited standard math calls compile and execute");
     const auto mathResult = compileSource("standard_math_calls", R"wlsl(
-float SampleProcess(const WaviateSample& wav)
+float SampleProcess(WaviateSample& wav)
 {
-    const float phase = wav.getSeconds() * 50.0f;
+    const float phase = wav.secondsSinceAppStart() * 50.0f;
     return sinf(phase)
          + static_cast<float>(sin(static_cast<double>(phase)))
          + sqrtf(9.0f)
@@ -146,15 +158,15 @@ WAVIATE_TEST_CASE(CompilePipelineSampleInputFlowTest, "Compile Pipeline Sample I
     const auto metadataResult = compileSource("sample_metadata_flow", R"wlsl(
 float SampleProcess(const WaviateSample& wav)
 {
-    const float metadata = static_cast<float>(wav.getChannel())
-        + static_cast<float>(wav.getSampleInBlock()) * 10.0f
-        + static_cast<float>(wav.getBlockSize()) * 100.0f
-        + static_cast<float>(wav.getInputChannelCount()) * 1000.0f
-        + static_cast<float>(wav.getChannelCount()) * 10000.0f
-        + wav.getSampleRate() * 0.001f
-        + static_cast<float>(wav.getSamplesSinceAppStart()) * 0.01f;
+    const float metadata = static_cast<float>(wav.channel())
+        + static_cast<float>(wav.sampleInBlock()) * 10.0f
+        + static_cast<float>(wav.blockSize()) * 100.0f
+        + static_cast<float>(wav.inputChannelCount()) * 1000.0f
+        + static_cast<float>(wav.channelCount()) * 10000.0f
+        + wav.sampleRate() * 0.001f
+        + static_cast<float>(wav.samplesSinceAppStart()) * 0.01f;
 
-    return metadata + wav.getIncomingSample() + wav.getCurrentSample();
+    return metadata + wav.incomingSample() + wav.currentSample();
 }
 )wlsl");
     expectCompileSuccess(*this, metadataResult);
@@ -175,13 +187,13 @@ float SampleProcess(const WaviateSample& wav)
 
     WAVIATE_TEST("waviate sample supports indexed channel reads and current sample writes");
     const auto bufferFlowResult = compileSource("sample_buffer_flow", R"wlsl(
-float SampleProcess(const WaviateSample& wav)
+float SampleProcess(WaviateSample& wav)
 {
-    const float mixed = wav.getIncomingSample(0, 1)
-        + wav.getIncomingSample(1, 2)
-        + wav.getCurrentSample(2, 0);
+    const float mixed = wav.incomingSample(0, 1)
+        + wav.incomingSample(1, 2)
+        + wav.currentSample(2, 0);
     wav.setCurrentSample(mixed);
-    return wav.getCurrentSample();
+    return wav.currentSample();
 }
 )wlsl");
     expectCompileSuccess(*this, bufferFlowResult);
@@ -209,12 +221,12 @@ float SampleProcess(const WaviateSample& wav)
 
     WAVIATE_TEST("waviate sample exposes midi state deterministically");
     const auto midiResult = compileSource("sample_midi_flow", R"wlsl(
-float SampleProcess(const WaviateSample& wav)
+float SampleProcess(WaviateSample& wav)
 {
     const float noteState = wav.isMidiNoteOn(64) ? 1.0f : 0.0f;
-    const float ccValue = static_cast<float>(wav.getMidiCCValue(7));
+    const float ccValue = static_cast<float>(wav.midiCCValue(7));
     wav.setCurrentSample(noteState + ccValue);
-    return wav.getCurrentSample();
+    return wav.currentSample();
 }
 )wlsl");
     expectCompileSuccess(*this, midiResult);
@@ -224,6 +236,59 @@ float SampleProcess(const WaviateSample& wav)
         invocation.midiNoteOn[64] = 1;
         invocation.midiCcValue[7] = 99;
         WAVIATE_EXPECT(nearlyEqual(invokeSample(midiResult, invocation), 100.0f));
+    }
+
+    WAVIATE_TEST("waviate midi voices expose sample-precise ordering phase tuning and ADSR");
+    const auto voiceResult = compileSource("midi_voice_helpers", R"wlsl(
+struct CustomTuning { float operator()(int) const { return 2.0f; } };
+float SampleProcess(const WaviateSample& wav)
+{
+    float noteSum = 0.0f;
+    for (const auto voice : wav.midiVoices(2))
+        noteSum += static_cast<float>(voice.note());
+    return noteSum
+        + wav.midiNotePhase(69, CustomTuning{})
+        + wav.midiNoteAdsr(69, 0.1f, 0.1f, 0.5f, 0.1f)
+        + static_cast<float>(wav.samplesSinceMidiNotePressed(69)) * 0.000001f;
+}
+)wlsl");
+    expectCompileSuccess(*this, voiceResult);
+    if (voiceResult)
+    {
+        SampleInvocation invocation;
+        invocation.samplesSinceAppStart = 12000;
+        invocation.midiNoteOn[69] = 1;
+        invocation.sampleWhenMidiNoteOn[69] = 0;
+        invocation.midiNotePressOrder[0] = 69;
+        invocation.midiNotePressOrder[1] = 60;
+        invocation.midiVoiceOrder[0] = 69;
+        invocation.midiVoiceOrder[1] = 60;
+        invocation.midiNotePressCount = 2;
+        invocation.midiVoiceCount = 2;
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(voiceResult, invocation), 130.012f, 0.0001f));
+    }
+
+    WAVIATE_TEST("waviate midi ADSR releases from the level reached when the note ended");
+    const auto releaseResult = compileSource("midi_release_adsr", R"wlsl(
+float SampleProcess(const WaviateSample& wav)
+{
+    return wav.midiNoteAdsr(69, 0.1f, 0.1f, 0.5f, 0.1f);
+}
+)wlsl");
+    expectCompileSuccess(*this, releaseResult);
+    if (releaseResult)
+    {
+        SampleInvocation invocation;
+        invocation.samplesSinceAppStart = 12000;
+        invocation.sampleWhenMidiNoteOn[69] = 0;
+        invocation.sampleWhenMidiNoteOff[69] = 9600;
+        invocation.midiNotePressOrder[0] = 69;
+        invocation.midiNoteReleaseOrder[0] = 69;
+        invocation.midiVoiceOrder[0] = 69;
+        invocation.midiNotePressCount = 1;
+        invocation.midiNoteReleaseCount = 1;
+        invocation.midiVoiceCount = 1;
+        WAVIATE_EXPECT(nearlyEqual(invokeSample(releaseResult, invocation), 0.25f));
     }
 }
 
@@ -290,7 +355,7 @@ WAVIATE_TEST_CASE(CompilePipelineFuelMeteringTest, "Compile Pipeline Fuel Meteri
     const auto simpleResult = compileSource("fuel_simple", R"wlsl(
 float SampleProcess(const WaviateSample& wav)
 {
-    return wav.getIncomingSample() * 0.5f;
+    return wav.incomingSample() * 0.5f;
 }
 )wlsl");
     expectCompileSuccess(*this, simpleResult);
@@ -310,7 +375,7 @@ float SampleProcess(const WaviateSample& wav)
     const auto loopResult = compileSource("fuel_loop", R"wlsl(
 float SampleProcess(const WaviateSample& wav)
 {
-    float x = wav.getIncomingSample() * 0.1f;
+    float x = wav.incomingSample() * 0.1f;
     for (int i = 0; i < 2000; ++i)
     {
         x = 3.9f * x * (1.0f - x);
@@ -339,7 +404,7 @@ WAVIATE_TEST_CASE(CompilePipelineArenaFacadeTest, "Compile Pipeline Arena Facade
 
     WAVIATE_TEST("waviate facade containers allocate through the ephemeral arena");
     const auto arenaResult = compileSource("arena_facade", R"wlsl(
-float SampleProcess(const WaviateSample& wav)
+float SampleProcess(WaviateSample& wav)
 {
     auto values = wav.newArray<float>(4);
     values.set(0, 1.25f);
@@ -443,7 +508,7 @@ float SampleProcess(const WaviateSample& wav)
     const auto stackResult = compileSource("unsafe_dynamic_stack", R"wlsl(
 float SampleProcess(const WaviateSample& wav)
 {
-    int count = wav.getBlockSize();
+    int count = wav.blockSize();
     float values[count];
     values[0] = 1.0f;
     return values[0];

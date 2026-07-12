@@ -31,6 +31,12 @@ struct WaviateSampleInput {
     uint64_t* sampleWhenMidiNoteOn;
     uint64_t* sampleWhenMidiNoteOff;
     uint64_t* sampleWhenCCValueChanged;
+    const uint8_t* midiNotePressOrder;
+    const uint8_t* midiNoteReleaseOrder;
+    const uint8_t* midiVoiceOrder;
+    int32_t midiNotePressCount;
+    int32_t midiNoteReleaseCount;
+    int32_t midiVoiceCount;
     bool sustain;
     bool* sustainDefer;
 
@@ -42,12 +48,10 @@ struct WaviateSampleInput {
     uint64_t* sampleWhenControllerAxisChanged;
     int32_t controllerAxisCount;
 
-#ifdef WAV_SCRIPT_PREMIUM
 	const char* const* oscStrings;
 	const int32_t* oscInts;
 	const uint32_t* oscColors;
     const float* oscFloats;
-#endif
 
     float sampleRate;
     float** previousSamples;
@@ -66,6 +70,19 @@ struct WaviateFrequencyInput {
     int32_t totalBinCount;
     int32_t channelCount;
     uint8_t channel;
+
+    const uint8_t* midiNoteOn;
+    const uint8_t* midiCCValue;
+    const uint64_t* sampleWhenMidiNoteOn;
+    const uint64_t* sampleWhenMidiNoteOff;
+    const uint64_t* sampleWhenCCValueChanged;
+    const uint8_t* midiNotePressOrder;
+    const uint8_t* midiNoteReleaseOrder;
+    const uint8_t* midiVoiceOrder;
+    int32_t midiNotePressCount;
+    int32_t midiNoteReleaseCount;
+    int32_t midiVoiceCount;
+    bool sustain;
 
     const WaviateComplex** currentFrequencyData;
     const WaviateComplex** inputDeviceData;

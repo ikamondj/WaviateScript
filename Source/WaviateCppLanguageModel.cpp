@@ -58,11 +58,27 @@ FunctionSymbol function(std::string name,
 const std::vector<FunctionSymbol>& waviateCoreMemberFunctions()
 {
     static const std::vector<FunctionSymbol> symbols {
-        function("getSeconds", "float", {}, SymbolKind::Method, "Seconds since app start."),
+        function("secondsSinceAppStart", "float", {}, SymbolKind::Method, "Seconds since app start."),
         function("samplesToSeconds", "float", { param("uint64_t", "samples") }, SymbolKind::Method, "Convert samples to seconds."),
         function("secondsToSamples", "uint64_t", { param("float", "seconds") }, SymbolKind::Method, "Convert seconds to samples."),
         function("sampleRateHz", "float", {}, SymbolKind::Method, "Sample rate in hertz."),
         function("sampleRateKHz", "float", {}, SymbolKind::Method, "Sample rate in kilohertz."),
+        function("isMidiNoteOn", "bool", { param("int", "note") }, SymbolKind::Method, "Whether a MIDI note is held or sustained."),
+        function("midiCCValue", "uint8_t", { param("int", "controller") }, SymbolKind::Method, "MIDI controller value."),
+        function("midiNotePressCount", "int", {}, SymbolKind::Method, "Number of notes in the press ordering."),
+        function("midiNoteReleaseCount", "int", {}, SymbolKind::Method, "Number of notes in the release ordering."),
+        function("midiVoiceCount", "int", {}, SymbolKind::Method, "Number of allocated note voices."),
+        function("midiNotePressOrder", "int", { param("int", "index") }, SymbolKind::Method, "Note number at a newest-first press index."),
+        function("midiNoteReleaseOrder", "int", { param("int", "index") }, SymbolKind::Method, "Note number at a newest-first release index."),
+        function("midiVoiceNote", "int", { param("int", "index") }, SymbolKind::Method, "Note number at a newest-first voice index."),
+        function("sampleWhenMidiNotePressed", "uint64_t", { param("int", "note") }, SymbolKind::Method, "Absolute sample of the latest note press."),
+        function("sampleWhenMidiNoteReleased", "uint64_t", { param("int", "note") }, SymbolKind::Method, "Absolute sample of the latest note release."),
+        function("samplesSinceMidiNotePressed", "uint64_t", { param("int", "note") }, SymbolKind::Method, "Samples since the latest note press."),
+        function("samplesSinceMidiNoteReleased", "uint64_t", { param("int", "note") }, SymbolKind::Method, "Samples since the latest note release."),
+        function("midiNoteFrequency", "float", { param("int", "note") }, SymbolKind::Method, "12-TET note frequency in hertz."),
+        function("midiNotePhase", "float", { param("int", "note") }, SymbolKind::Method, "12-TET phase in [0, 1) since note press."),
+        function("midiNoteAdsr", "float", { param("int", "note"), param("float", "attackSeconds"), param("float", "decaySeconds"), param("float", "sustainLevel"), param("float", "releaseSeconds") }, SymbolKind::Method, "Note-aware ADSR amplitude in [0, 1]."),
+        function("midiVoices", "WaviateCore::MidiVoices", { param("int", "maximumVoices", "128") }, SymbolKind::Method, "Newest-first bounded iterable voice view."),
         function("adsr", "float", { param("float", "attack"), param("float", "decay"), param("float", "sustain"), param("float", "release"), param("float", "t") }, SymbolKind::Method, "ADSR envelope."),
         function("ADSR", "float", { param("float", "attack"), param("float", "decay"), param("float", "sustain"), param("float", "release"), param("float", "t") }, SymbolKind::Method, "ADSR envelope."),
         function("sine", "float", { param("float", "x") }, SymbolKind::Method, "Sine oscillator."),
@@ -281,21 +297,19 @@ const std::vector<FieldSymbol>& cMathConstants()
 const std::vector<FunctionSymbol>& waviateSampleMemberFunctions()
 {
     static const std::vector<FunctionSymbol> symbols {
-        function("getChannel", "int", {}, SymbolKind::Method, "Current channel."),
-        function("getSampleInBlock", "int", {}, SymbolKind::Method, "Sample index in the current block."),
-        function("getBlockSize", "int", {}, SymbolKind::Method, "Current block size."),
-        function("getInputChannelCount", "int", {}, SymbolKind::Method, "Input channel count."),
-        function("getSideChainChannelCount", "int", {}, SymbolKind::Method, "Sidechain channel count."),
-        function("getChannelCount", "int", {}, SymbolKind::Method, "Output channel count."),
-        function("getSampleRate", "float", {}, SymbolKind::Method, "Sample rate in hertz."),
-        function("getSamplesSinceAppStart", "uint64_t", {}, SymbolKind::Method, "Samples since app start."),
+        function("channel", "int", {}, SymbolKind::Method, "Current channel."),
+        function("sampleInBlock", "int", {}, SymbolKind::Method, "Sample index in the current block."),
+        function("blockSize", "int", {}, SymbolKind::Method, "Current block size."),
+        function("inputChannelCount", "int", {}, SymbolKind::Method, "Input channel count."),
+        function("sideChainChannelCount", "int", {}, SymbolKind::Method, "Sidechain channel count."),
+        function("channelCount", "int", {}, SymbolKind::Method, "Output channel count."),
+        function("sampleRate", "float", {}, SymbolKind::Method, "Sample rate in hertz."),
+        function("samplesSinceAppStart", "uint64_t", {}, SymbolKind::Method, "Samples since app start."),
         function("isSustainDown", "bool", {}, SymbolKind::Method, "Sustain pedal state."),
-        function("getIncomingSample", "float", { param("int", "channel", "-1"), param("int", "sample", "-1") }, SymbolKind::Method, "Input sample."),
-        function("getSideChainSample", "float", { param("int", "channel", "0"), param("int", "sample", "-1") }, SymbolKind::Method, "Sidechain sample."),
-        function("getCurrentSample", "float", { param("int", "channel", "-1"), param("int", "sample", "-1") }, SymbolKind::Method, "Current output sample."),
+        function("incomingSample", "float", { param("int", "channel", "-1"), param("int", "sample", "-1") }, SymbolKind::Method, "Input sample."),
+        function("sideChainSample", "float", { param("int", "channel", "0"), param("int", "sample", "-1") }, SymbolKind::Method, "Sidechain sample."),
+        function("currentSample", "float", { param("int", "channel", "-1"), param("int", "sample", "-1") }, SymbolKind::Method, "Current output sample."),
         function("setCurrentSample", "void", { param("float", "value"), param("int", "channel", "-1"), param("int", "sample", "-1") }, SymbolKind::Method, "Write the current output sample."),
-        function("isMidiNoteOn", "bool", { param("int", "note") }, SymbolKind::Method, "True when a MIDI note is held."),
-        function("getMidiCCValue", "uint8_t", { param("int", "controller") }, SymbolKind::Method, "MIDI controller value."),
     };
 
     return symbols;
@@ -304,18 +318,40 @@ const std::vector<FunctionSymbol>& waviateSampleMemberFunctions()
 const std::vector<FunctionSymbol>& waviateFrequencyMemberFunctions()
 {
     static const std::vector<FunctionSymbol> symbols {
-        function("getChannel", "int", {}, SymbolKind::Method, "Current channel."),
-        function("getBin", "int", {}, SymbolKind::Method, "Current frequency bin."),
-        function("getTotalBinCount", "int", {}, SymbolKind::Method, "Total frequency bin count."),
-        function("getSampleWidth", "int", {}, SymbolKind::Method, "FFT window size."),
-        function("getChannelCount", "int", {}, SymbolKind::Method, "Channel count."),
-        function("getSampleRate", "float", {}, SymbolKind::Method, "Sample rate in hertz."),
-        function("getSamplesSinceAppStart", "uint64_t", {}, SymbolKind::Method, "Samples since app start."),
-        function("getIncomingSample", "WaviateComplex", { param("int", "channel", "-1"), param("int", "bin", "-1") }, SymbolKind::Method, "Input frequency sample."),
-        function("getCurrentSample", "WaviateComplex", { param("int", "channel", "-1"), param("int", "bin", "-1") }, SymbolKind::Method, "Current frequency output sample."),
-        function("getSideChainSample", "WaviateComplex", { param("int", "channel", "0"), param("int", "bin", "-1") }, SymbolKind::Method, "Sidechain frequency sample."),
+        function("channel", "int", {}, SymbolKind::Method, "Current channel."),
+        function("bin", "int", {}, SymbolKind::Method, "Current frequency bin."),
+        function("totalBinCount", "int", {}, SymbolKind::Method, "Total frequency bin count."),
+        function("sampleWidth", "int", {}, SymbolKind::Method, "FFT window size."),
+        function("channelCount", "int", {}, SymbolKind::Method, "Channel count."),
+        function("sampleRate", "float", {}, SymbolKind::Method, "Sample rate in hertz."),
+        function("samplesSinceAppStart", "uint64_t", {}, SymbolKind::Method, "Samples since app start."),
+        function("incomingSample", "WaviateComplex", { param("int", "channel", "-1"), param("int", "bin", "-1") }, SymbolKind::Method, "Input frequency sample."),
+        function("currentSample", "WaviateComplex", { param("int", "channel", "-1"), param("int", "bin", "-1") }, SymbolKind::Method, "Current frequency output sample."),
+        function("sideChainSample", "WaviateComplex", { param("int", "channel", "0"), param("int", "bin", "-1") }, SymbolKind::Method, "Sidechain frequency sample."),
     };
 
+    return symbols;
+}
+
+const std::vector<FunctionSymbol>& waviateMidiVoiceMemberFunctions()
+{
+    static const std::vector<FunctionSymbol> symbols {
+        function("note", "int", {}, SymbolKind::Method, "MIDI note number."),
+        function("isHeld", "bool", {}, SymbolKind::Method, "Whether the note is held or sustained."),
+        function("samplesSincePressed", "uint64_t", {}, SymbolKind::Method, "Samples since the latest press."),
+        function("samplesSinceReleased", "uint64_t", {}, SymbolKind::Method, "Samples since the latest release."),
+        function("frequency", "float", {}, SymbolKind::Method, "12-TET frequency in hertz."),
+        function("phase", "float", {}, SymbolKind::Method, "12-TET phase in [0, 1)."),
+        function("adsr", "float", { param("float", "attackSeconds"), param("float", "decaySeconds"), param("float", "sustainLevel"), param("float", "releaseSeconds") }, SymbolKind::Method, "Voice ADSR amplitude in [0, 1]."),
+    };
+    return symbols;
+}
+
+const std::vector<FunctionSymbol>& waviateMidiVoicesMemberFunctions()
+{
+    static const std::vector<FunctionSymbol> symbols {
+        function("count", "int", {}, SymbolKind::Method, "Number of voices in this bounded view."),
+    };
     return symbols;
 }
 
@@ -335,6 +371,12 @@ const std::vector<FieldSymbol>& waviateSampleInputFields()
         field("sampleWhenMidiNoteOn", "uint64_t*", "Sample positions for MIDI note-on events."),
         field("sampleWhenMidiNoteOff", "uint64_t*", "Sample positions for MIDI note-off events."),
         field("sampleWhenCCValueChanged", "uint64_t*", "Sample positions for MIDI controller changes."),
+        field("midiNotePressOrder", "const uint8_t*", "Newest-first unique MIDI note press order."),
+        field("midiNoteReleaseOrder", "const uint8_t*", "Newest-first unique MIDI note release order."),
+        field("midiVoiceOrder", "const uint8_t*", "Newest-first unique MIDI voice order."),
+        field("midiNotePressCount", "int32_t", "Valid press-order entries."),
+        field("midiNoteReleaseCount", "int32_t", "Valid release-order entries."),
+        field("midiVoiceCount", "int32_t", "Valid voice-order entries."),
         field("sustain", "bool", "Sustain pedal state."),
         field("sustainDefer", "bool*", "Deferred sustain note-off state."),
         field("controllerCount", "int32_t", "Connected controller count."),
@@ -362,6 +404,18 @@ const std::vector<FieldSymbol>& waviateFrequencyInputFields()
         field("totalBinCount", "int32_t", "Total frequency bin count."),
         field("channelCount", "int32_t", "Channel count."),
         field("channel", "uint8_t", "Current channel."),
+        field("midiNoteOn", "const uint8_t*", "MIDI note-on state array."),
+        field("midiCCValue", "const uint8_t*", "MIDI controller value array."),
+        field("sampleWhenMidiNoteOn", "const uint64_t*", "Sample positions for MIDI note presses."),
+        field("sampleWhenMidiNoteOff", "const uint64_t*", "Sample positions for MIDI note releases."),
+        field("sampleWhenCCValueChanged", "const uint64_t*", "Sample positions for MIDI controller changes."),
+        field("midiNotePressOrder", "const uint8_t*", "Newest-first unique MIDI note press order."),
+        field("midiNoteReleaseOrder", "const uint8_t*", "Newest-first unique MIDI note release order."),
+        field("midiVoiceOrder", "const uint8_t*", "Newest-first unique MIDI voice order."),
+        field("midiNotePressCount", "int32_t", "Valid press-order entries."),
+        field("midiNoteReleaseCount", "int32_t", "Valid release-order entries."),
+        field("midiVoiceCount", "int32_t", "Valid voice-order entries."),
+        field("sustain", "bool", "Sustain pedal state."),
         field("currentFrequencyData", "const WaviateComplex**", "Current frequency output data."),
         field("inputDeviceData", "const WaviateComplex**", "Input frequency data."),
         field("inputSideChainFrequencyData", "const WaviateComplex**", "Sidechain frequency data."),
@@ -372,11 +426,15 @@ const std::vector<FieldSymbol>& waviateFrequencyInputFields()
     return symbols;
 }
 
-const std::vector<FieldSymbol>& waviateComplexFields()
+const std::vector<FunctionSymbol>& waviateComplexMemberFunctions()
 {
-    static const std::vector<FieldSymbol> symbols {
-        field("real", "float", "Real component."),
-        field("imag", "float", "Imaginary component."),
+    static const std::vector<FunctionSymbol> symbols {
+        function("real", "float", {}, SymbolKind::Method, "Real component."),
+        function("imaginary", "float", {}, SymbolKind::Method, "Imaginary component."),
+        function("norm", "float", {}, SymbolKind::Method, "Squared magnitude."),
+        function("magnitude", "float", {}, SymbolKind::Method, "Magnitude."),
+        function("phase", "float", {}, SymbolKind::Method, "Phase in radians."),
+        function("conjugate", "WaviateComplex", {}, SymbolKind::Method, "Complex conjugate."),
     };
 
     return symbols;
@@ -388,11 +446,9 @@ const std::vector<FieldSymbol>& cppBuiltinTypes()
         classSymbol("WaviateSample", "Sample shader context."),
         classSymbol("WaviateFrequency", "Frequency shader context."),
         classSymbol("WaviateCore", "Shared oscillator and utility API."),
-        classSymbol("WaviateSampleInput", "Sample input data passed to the C ABI."),
-        classSymbol("WaviateSampleStateWriter", "Sample state writer."),
-        classSymbol("WaviateFrequencyInput", "Frequency input data passed to the C ABI."),
-        classSymbol("WaviateFrequencyStateWriter", "Frequency state writer."),
-        classSymbol("WaviateComplex", "Complex number with real and imaginary fields."),
+        classSymbol("WaviateCore::MidiVoice", "A relevant MIDI voice."),
+        classSymbol("WaviateCore::MidiVoices", "A bounded iterable MIDI voice view."),
+        classSymbol("WaviateComplex", "Complex number with accessor-based components."),
         classSymbol("WaviateArray", "Temporary arena-backed array wrapper."),
         classSymbol("WaviateVector", "Temporary arena-backed vector wrapper."),
         classSymbol("WaviateString", "Temporary arena-backed string wrapper."),
@@ -445,8 +501,8 @@ const std::vector<FieldSymbol>& cppKeywords()
 const std::vector<FunctionSymbol>& waviateEntryPoints()
 {
     static const std::vector<FunctionSymbol> symbols {
-        function("SampleProcess", "float", { param("const WaviateSample&", "wav") }, SymbolKind::Function, "C++ sample shader entry point."),
-        function("FrequencyProcess", "WaviateComplex", { param("const WaviateFrequency&", "wav") }, SymbolKind::Function, "C++ frequency shader entry point."),
+        function("SampleProcess", "float", { param("WaviateSample&", "wav") }, SymbolKind::Function, "C++ sample shader entry point."),
+        function("FrequencyProcess", "WaviateComplex", { param("WaviateFrequency&", "wav") }, SymbolKind::Function, "C++ frequency shader entry point."),
         function("sample_process", "float", { param("const WaviateSampleInput*", "input"), param("WaviateSampleStateWriter*", "writer") }, SymbolKind::Function, "C ABI sample shader entry point."),
         function("frequency_process", "WaviateComplex", { param("const WaviateFrequencyInput*", "input"), param("WaviateFrequencyStateWriter*", "writer") }, SymbolKind::Function, "C ABI frequency shader entry point."),
     };
@@ -470,6 +526,9 @@ std::string buildEmbeddedCppApi()
     api.append(R"waviate_cpp_api(
 #ifndef WAVIATE_SCRIPT_INPUT_API_DEFINED
 #define WAVIATE_SCRIPT_INPUT_API_DEFINED
+
+class WaviateSample;
+class WaviateFrequency;
 using uint8_t = unsigned char;
 using int32_t = int;
 using uint32_t = unsigned int;
@@ -477,6 +536,8 @@ using uint64_t = unsigned long long;
 using size_t = __SIZE_TYPE__;
 
 struct WaviateSampleInput {
+private:
+    friend class WaviateSample;
     uint64_t samplesSinceAppStart;
     int32_t sampleInBlock;
     int32_t blockSize;
@@ -491,6 +552,12 @@ struct WaviateSampleInput {
     uint64_t* sampleWhenMidiNoteOn;
     uint64_t* sampleWhenMidiNoteOff;
     uint64_t* sampleWhenCCValueChanged;
+    const uint8_t* midiNotePressOrder;
+    const uint8_t* midiNoteReleaseOrder;
+    const uint8_t* midiVoiceOrder;
+    int32_t midiNotePressCount;
+    int32_t midiNoteReleaseCount;
+    int32_t midiVoiceCount;
     bool sustain;
     bool* sustainDefer;
 
@@ -501,6 +568,11 @@ struct WaviateSampleInput {
     float* controllerAxisValue;
     uint64_t* sampleWhenControllerAxisChanged;
     int32_t controllerAxisCount;
+
+    const char* const* oscStrings;
+    const int32_t* oscInts;
+    const uint32_t* oscColors;
+    const float* oscFloats;
 
     float sampleRate;
     float** previousSamples;
@@ -513,33 +585,53 @@ struct WaviateSampleStateWriter {};
 
 template <typename T>
 struct WaviateBasicComplex {
-    T real;
-    T imag;
-    constexpr WaviateBasicComplex(T realIn = T{}, T imagIn = T{}) : real(realIn), imag(imagIn) {}
-    constexpr WaviateBasicComplex operator+(WaviateBasicComplex rhs) const { return { real + rhs.real, imag + rhs.imag }; }
-    constexpr WaviateBasicComplex operator-(WaviateBasicComplex rhs) const { return { real - rhs.real, imag - rhs.imag }; }
+    constexpr WaviateBasicComplex(T realIn = T{}, T imaginaryIn = T{}) : realValue(realIn), imaginaryValue(imaginaryIn) {}
+    constexpr T real() const { return realValue; }
+    constexpr T imaginary() const { return imaginaryValue; }
+    constexpr WaviateBasicComplex operator+(WaviateBasicComplex rhs) const { return { realValue + rhs.realValue, imaginaryValue + rhs.imaginaryValue }; }
+    constexpr WaviateBasicComplex operator-(WaviateBasicComplex rhs) const { return { realValue - rhs.realValue, imaginaryValue - rhs.imaginaryValue }; }
     constexpr WaviateBasicComplex operator*(WaviateBasicComplex rhs) const {
-        return { real * rhs.real - imag * rhs.imag, real * rhs.imag + imag * rhs.real };
+        return { realValue * rhs.realValue - imaginaryValue * rhs.imaginaryValue, realValue * rhs.imaginaryValue + imaginaryValue * rhs.realValue };
     }
     constexpr WaviateBasicComplex operator/(WaviateBasicComplex rhs) const {
-        const T d = rhs.real * rhs.real + rhs.imag * rhs.imag;
-        return { (real * rhs.real + imag * rhs.imag) / d, (imag * rhs.real - real * rhs.imag) / d };
+        const T d = rhs.realValue * rhs.realValue + rhs.imaginaryValue * rhs.imaginaryValue;
+        return { (realValue * rhs.realValue + imaginaryValue * rhs.imaginaryValue) / d, (imaginaryValue * rhs.realValue - realValue * rhs.imaginaryValue) / d };
     }
-    constexpr WaviateBasicComplex operator*(T scalar) const { return { real * scalar, imag * scalar }; }
-    constexpr WaviateBasicComplex operator/(T scalar) const { return { real / scalar, imag / scalar }; }
-    constexpr WaviateBasicComplex conjugate() const { return { real, -imag }; }
-    constexpr T norm() const { return real * real + imag * imag; }
+    constexpr WaviateBasicComplex operator*(T scalar) const { return { realValue * scalar, imaginaryValue * scalar }; }
+    constexpr WaviateBasicComplex operator/(T scalar) const { return { realValue / scalar, imaginaryValue / scalar }; }
+    constexpr WaviateBasicComplex conjugate() const { return { realValue, -imaginaryValue }; }
+    constexpr T norm() const { return realValue * realValue + imaginaryValue * imaginaryValue; }
+    T magnitude() const { return __builtin_sqrt(norm()); }
+    T phase() const { return __builtin_atan2(imaginaryValue, realValue); }
+private:
+    T realValue;
+    T imaginaryValue;
 };
 using fcomplex = WaviateBasicComplex<float>;
 using dcomplex = WaviateBasicComplex<double>;
 using WaviateComplex = fcomplex;
 
 struct WaviateFrequencyInput {
+private:
+    friend class WaviateFrequency;
     int32_t sampleWidth;
     int32_t bin;
     int32_t totalBinCount;
     int32_t channelCount;
     uint8_t channel;
+
+    const uint8_t* midiNoteOn;
+    const uint8_t* midiCCValue;
+    const uint64_t* sampleWhenMidiNoteOn;
+    const uint64_t* sampleWhenMidiNoteOff;
+    const uint64_t* sampleWhenCCValueChanged;
+    const uint8_t* midiNotePressOrder;
+    const uint8_t* midiNoteReleaseOrder;
+    const uint8_t* midiVoiceOrder;
+    int32_t midiNotePressCount;
+    int32_t midiNoteReleaseCount;
+    int32_t midiVoiceCount;
+    bool sustain;
 
     const WaviateComplex** currentFrequencyData;
     const WaviateComplex** inputDeviceData;
@@ -681,26 +773,26 @@ inline bool signbit(double x) { return __builtin_signbit(x) != 0; }
 
 namespace waviate_complex {
     template <typename T> inline T abs(WaviateBasicComplex<T> v) { return __builtin_sqrt(v.norm()); }
-    template <typename T> inline T arg(WaviateBasicComplex<T> v) { return __builtin_atan2(v.imag, v.real); }
+    template <typename T> inline T arg(WaviateBasicComplex<T> v) { return __builtin_atan2(v.imaginary(), v.real()); }
     template <typename T> inline WaviateBasicComplex<T> conj(WaviateBasicComplex<T> v) { return v.conjugate(); }
     template <typename T> inline WaviateBasicComplex<T> polar(T magnitude, T phase) {
-        return { magnitude * __builtin_cos(phase), magnitude * __builtin_sin(phase) };
+        return { static_cast<T>(magnitude * __builtin_cos(phase)), static_cast<T>(magnitude * __builtin_sin(phase)) };
     }
     template <typename T> inline WaviateBasicComplex<T> exp(WaviateBasicComplex<T> v) {
-        const T scale = __builtin_exp(v.real);
-        return { scale * __builtin_cos(v.imag), scale * __builtin_sin(v.imag) };
+        const T scale = __builtin_exp(v.real());
+        return { static_cast<T>(scale * __builtin_cos(v.imaginary())), static_cast<T>(scale * __builtin_sin(v.imaginary())) };
     }
     template <typename T> inline WaviateBasicComplex<T> log(WaviateBasicComplex<T> v) {
-        return { __builtin_log(abs(v)), arg(v) };
+        return { static_cast<T>(__builtin_log(abs(v))), arg(v) };
     }
     template <typename T> inline WaviateBasicComplex<T> pow(WaviateBasicComplex<T> base, T exponent) {
         return polar(__builtin_pow(abs(base), exponent), arg(base) * exponent);
     }
     template <typename T> inline WaviateBasicComplex<T> sin(WaviateBasicComplex<T> v) {
-        return { __builtin_sin(v.real) * __builtin_cosh(v.imag), __builtin_cos(v.real) * __builtin_sinh(v.imag) };
+        return { static_cast<T>(__builtin_sin(v.real()) * __builtin_cosh(v.imaginary())), static_cast<T>(__builtin_cos(v.real()) * __builtin_sinh(v.imaginary())) };
     }
     template <typename T> inline WaviateBasicComplex<T> cos(WaviateBasicComplex<T> v) {
-        return { __builtin_cos(v.real) * __builtin_cosh(v.imag), -__builtin_sin(v.real) * __builtin_sinh(v.imag) };
+        return { static_cast<T>(__builtin_cos(v.real()) * __builtin_cosh(v.imaginary())), static_cast<T>(-__builtin_sin(v.real()) * __builtin_sinh(v.imaginary())) };
     }
     template <typename T> inline WaviateBasicComplex<T> tan(WaviateBasicComplex<T> v) { return sin(v) / cos(v); }
 }
@@ -1371,7 +1463,9 @@ private:
     api.append(R"waviate_cpp_api(
 class WaviateCore {
 public:
-    float getSeconds() const { return samplesToSeconds(coreSamplesSinceAppStart); }
+    class MidiVoice;
+    class MidiVoices;
+    float secondsSinceAppStart() const { return samplesToSeconds(coreSamplesSinceAppStart); }
     float samplesToSeconds(uint64_t samples) const {
         return coreSampleRate > 0.0f ? static_cast<float>(samples) / coreSampleRate : 0.0f;
     }
@@ -1382,6 +1476,85 @@ public:
     }
     float sampleRateHz() const { return coreSampleRate; }
     float sampleRateKHz() const { return coreSampleRate * 0.001f; }
+
+    bool isMidiNoteOn(int note) const { return isValidIndex(note, 128) && coreMidiNoteOn != nullptr && coreMidiNoteOn[note] != 0; }
+    uint8_t midiCCValue(int controller) const { return isValidIndex(controller, 128) && coreMidiCCValue != nullptr ? coreMidiCCValue[controller] : 0; }
+    int midiNotePressCount() const { return coreMidiNotePressCount; }
+    int midiNoteReleaseCount() const { return coreMidiNoteReleaseCount; }
+    int midiVoiceCount() const { return coreMidiVoiceCount; }
+    int midiNotePressOrder(int index) const { return orderedMidiNote(coreMidiNotePressOrder, coreMidiNotePressCount, index); }
+    int midiNoteReleaseOrder(int index) const { return orderedMidiNote(coreMidiNoteReleaseOrder, coreMidiNoteReleaseCount, index); }
+    int midiVoiceNote(int index) const { return orderedMidiNote(coreMidiVoiceOrder, coreMidiVoiceCount, index); }
+    uint64_t sampleWhenMidiNotePressed(int note) const { return isValidIndex(note, 128) && coreSampleWhenMidiNoteOn != nullptr ? coreSampleWhenMidiNoteOn[note] : 0ULL; }
+    uint64_t sampleWhenMidiNoteReleased(int note) const { return isValidIndex(note, 128) && coreSampleWhenMidiNoteOff != nullptr ? coreSampleWhenMidiNoteOff[note] : 0ULL; }
+    uint64_t samplesSinceMidiNotePressed(int note) const {
+        const uint64_t eventSample = sampleWhenMidiNotePressed(note);
+        return hasOrderedMidiNote(coreMidiNotePressOrder, coreMidiNotePressCount, note) && coreSamplesSinceAppStart >= eventSample ? coreSamplesSinceAppStart - eventSample : 0ULL;
+    }
+    uint64_t samplesSinceMidiNoteReleased(int note) const {
+        const uint64_t eventSample = sampleWhenMidiNoteReleased(note);
+        return hasOrderedMidiNote(coreMidiNoteReleaseOrder, coreMidiNoteReleaseCount, note) && coreSamplesSinceAppStart >= eventSample ? coreSamplesSinceAppStart - eventSample : 0ULL;
+    }
+    float midiNoteFrequency(int note) const { return 440.0f * __builtin_powf(2.0f, static_cast<float>(note - 69) / 12.0f); }
+    template <typename Tuning> float midiNoteFrequency(int note, const Tuning& tuning) const { return static_cast<float>(tuning(note)); }
+    float midiNotePhase(int note) const { return midiNotePhaseForFrequency(note, midiNoteFrequency(note)); }
+    template <typename Tuning> float midiNotePhase(int note, const Tuning& tuning) const { return midiNotePhaseForFrequency(note, midiNoteFrequency(note, tuning)); }
+    float midiNoteAdsr(int note, float attackSeconds, float decaySeconds, float sustainLevel, float releaseSeconds) const {
+        if (!hasOrderedMidiNote(coreMidiNotePressOrder, coreMidiNotePressCount, note)) return 0.0f;
+        const uint64_t attackSamples = secondsToSamples(attackSeconds);
+        const uint64_t decaySamples = secondsToSamples(decaySeconds);
+        const uint64_t releaseSamples = secondsToSamples(releaseSeconds);
+        const float sustain = waviate_detail::clamp01(sustainLevel);
+        const float heldLevel = envelopeHeldLevel(samplesSinceMidiNotePressed(note), attackSamples, decaySamples, sustain);
+        if (isMidiNoteOn(note)) return heldLevel;
+        if (!hasOrderedMidiNote(coreMidiNoteReleaseOrder, coreMidiNoteReleaseCount, note) || releaseSamples == 0) return 0.0f;
+        const uint64_t heldUntilRelease = sampleWhenMidiNoteReleased(note) >= sampleWhenMidiNotePressed(note) ? sampleWhenMidiNoteReleased(note) - sampleWhenMidiNotePressed(note) : 0ULL;
+        const float releaseStart = envelopeHeldLevel(heldUntilRelease, attackSamples, decaySamples, sustain);
+        const double releaseRatio = static_cast<double>(samplesSinceMidiNoteReleased(note)) / static_cast<double>(releaseSamples);
+        return releaseStart * (1.0f - waviate_detail::clamp01(static_cast<float>(releaseRatio)));
+    }
+
+    class MidiVoice {
+    public:
+        int note() const { return midiNote; }
+        bool isHeld() const { return owner != nullptr && owner->isMidiNoteOn(midiNote); }
+        uint64_t samplesSincePressed() const { return owner != nullptr ? owner->samplesSinceMidiNotePressed(midiNote) : 0ULL; }
+        uint64_t samplesSinceReleased() const { return owner != nullptr ? owner->samplesSinceMidiNoteReleased(midiNote) : 0ULL; }
+        float frequency() const { return owner != nullptr ? owner->midiNoteFrequency(midiNote) : 0.0f; }
+        float phase() const { return owner != nullptr ? owner->midiNotePhase(midiNote) : 0.0f; }
+        template <typename Tuning> float frequency(const Tuning& tuning) const { return owner != nullptr ? owner->midiNoteFrequency(midiNote, tuning) : 0.0f; }
+        template <typename Tuning> float phase(const Tuning& tuning) const { return owner != nullptr ? owner->midiNotePhase(midiNote, tuning) : 0.0f; }
+        float adsr(float attackSeconds, float decaySeconds, float sustainLevel, float releaseSeconds) const { return owner != nullptr ? owner->midiNoteAdsr(midiNote, attackSeconds, decaySeconds, sustainLevel, releaseSeconds) : 0.0f; }
+    private:
+        friend class MidiVoices;
+        MidiVoice(const WaviateCore* ownerIn, int noteIn) : owner(ownerIn), midiNote(noteIn) {}
+        const WaviateCore* owner;
+        int midiNote;
+    };
+    class MidiVoices {
+    public:
+        class Iterator {
+        public:
+            MidiVoice operator*() const { return owner->operator[](index); }
+            Iterator& operator++() { ++index; return *this; }
+            bool operator!=(const Iterator& other) const { return index != other.index; }
+        private:
+            friend class MidiVoices;
+            Iterator(const MidiVoices* ownerIn, int indexIn) : owner(ownerIn), index(indexIn) {}
+            const MidiVoices* owner;
+            int index;
+        };
+        int count() const { return voiceCount; }
+        MidiVoice operator[](int index) const { return MidiVoice(owner, owner != nullptr ? owner->midiVoiceNote(index) : -1); }
+        Iterator begin() const { return Iterator(this, 0); }
+        Iterator end() const { return Iterator(this, voiceCount); }
+    private:
+        friend class WaviateCore;
+        MidiVoices(const WaviateCore* ownerIn, int countIn) : owner(ownerIn), voiceCount(countIn) {}
+        const WaviateCore* owner;
+        int voiceCount;
+    };
+    MidiVoices midiVoices(int maximumVoices = 128) const { return MidiVoices(this, waviate_detail::clampInt(maximumVoices, 0, coreMidiVoiceCount)); }
 
     template <typename T>
     WaviateArray<T> newArray(size_t size) const { return WaviateArray<T>::create(size); }
@@ -1436,16 +1609,47 @@ public:
     }
 
 protected:
-    WaviateCore(float sampleRateIn, uint64_t samplesSinceAppStartIn)
-        : coreSampleRate(sampleRateIn), coreSamplesSinceAppStart(samplesSinceAppStartIn) {}
+    WaviateCore(float sampleRateIn, uint64_t samplesSinceAppStartIn, const uint8_t* midiNoteOnIn, const uint8_t* midiCCValueIn,
+                const uint64_t* noteOnSamplesIn, const uint64_t* noteOffSamplesIn, const uint8_t* pressOrderIn, int pressCountIn,
+                const uint8_t* releaseOrderIn, int releaseCountIn, const uint8_t* voiceOrderIn, int voiceCountIn)
+        : coreSampleRate(sampleRateIn), coreSamplesSinceAppStart(samplesSinceAppStartIn), coreMidiNoteOn(midiNoteOnIn), coreMidiCCValue(midiCCValueIn),
+          coreSampleWhenMidiNoteOn(noteOnSamplesIn), coreSampleWhenMidiNoteOff(noteOffSamplesIn), coreMidiNotePressOrder(pressOrderIn),
+          coreMidiNoteReleaseOrder(releaseOrderIn), coreMidiVoiceOrder(voiceOrderIn), coreMidiNotePressCount(pressCountIn),
+          coreMidiNoteReleaseCount(releaseCountIn), coreMidiVoiceCount(voiceCountIn) {}
 
     static bool isValidIndex(int index, int count) {
         return index >= 0 && index < count;
     }
 
 private:
+    static int orderedMidiNote(const uint8_t* order, int count, int index) { return order != nullptr && index >= 0 && index < count ? static_cast<int>(order[index]) : -1; }
+    static bool hasOrderedMidiNote(const uint8_t* order, int count, int note) {
+        for (int index = 0; order != nullptr && index < count; ++index) if (order[index] == note) return true;
+        return false;
+    }
+    static float envelopeHeldLevel(uint64_t elapsed, uint64_t attack, uint64_t decay, float sustain) {
+        if (attack > 0 && elapsed < attack) return static_cast<float>(static_cast<double>(elapsed) / static_cast<double>(attack));
+        const uint64_t afterAttack = elapsed > attack ? elapsed - attack : 0ULL;
+        if (decay > 0 && afterAttack < decay) return 1.0f + (sustain - 1.0f) * static_cast<float>(static_cast<double>(afterAttack) / static_cast<double>(decay));
+        return sustain;
+    }
+    float midiNotePhaseForFrequency(int note, float frequency) const {
+        if (!isValidIndex(note, 128) || frequency <= 0.0f || coreSampleRate <= 0.0f || !hasOrderedMidiNote(coreMidiNotePressOrder, coreMidiNotePressCount, note)) return 0.0f;
+        const double cycles = static_cast<double>(samplesSinceMidiNotePressed(note)) * static_cast<double>(frequency) / static_cast<double>(coreSampleRate);
+        return static_cast<float>(cycles - __builtin_floor(cycles));
+    }
     float coreSampleRate;
     uint64_t coreSamplesSinceAppStart;
+    const uint8_t* coreMidiNoteOn;
+    const uint8_t* coreMidiCCValue;
+    const uint64_t* coreSampleWhenMidiNoteOn;
+    const uint64_t* coreSampleWhenMidiNoteOff;
+    const uint8_t* coreMidiNotePressOrder;
+    const uint8_t* coreMidiNoteReleaseOrder;
+    const uint8_t* coreMidiVoiceOrder;
+    int coreMidiNotePressCount;
+    int coreMidiNoteReleaseCount;
+    int coreMidiVoiceCount;
 };
 
 )waviate_cpp_api");
@@ -1454,22 +1658,27 @@ class WaviateSample final : public WaviateCore {
 public:
     WaviateSample(const WaviateSampleInput* inputIn, WaviateSampleStateWriter* writerIn)
         : WaviateCore(inputIn != nullptr ? inputIn->sampleRate : 0.0f,
-              inputIn != nullptr ? inputIn->samplesSinceAppStart : 0ULL),
+              inputIn != nullptr ? inputIn->samplesSinceAppStart : 0ULL,
+              inputIn != nullptr ? inputIn->midiNoteOn : nullptr, inputIn != nullptr ? inputIn->midiCCValue : nullptr,
+              inputIn != nullptr ? inputIn->sampleWhenMidiNoteOn : nullptr, inputIn != nullptr ? inputIn->sampleWhenMidiNoteOff : nullptr,
+              inputIn != nullptr ? inputIn->midiNotePressOrder : nullptr, inputIn != nullptr ? inputIn->midiNotePressCount : 0,
+              inputIn != nullptr ? inputIn->midiNoteReleaseOrder : nullptr, inputIn != nullptr ? inputIn->midiNoteReleaseCount : 0,
+              inputIn != nullptr ? inputIn->midiVoiceOrder : nullptr, inputIn != nullptr ? inputIn->midiVoiceCount : 0),
           input(inputIn), writer(writerIn) {}
 
-    int getChannel() const { return input != nullptr ? static_cast<int>(input->channel) : 0; }
-    int getSampleInBlock() const { return input != nullptr ? input->sampleInBlock : 0; }
-    int getBlockSize() const { return input != nullptr ? input->blockSize : 0; }
-    int getInputChannelCount() const { return input != nullptr ? input->inputChannelCount : 0; }
-    int getSideChainChannelCount() const { return input != nullptr ? input->sideChainChannelCount : 0; }
-    int getChannelCount() const { return input != nullptr ? input->channelCount : 0; }
-    float getSampleRate() const { return input != nullptr ? input->sampleRate : 0.0f; }
-    uint64_t getSamplesSinceAppStart() const { return input != nullptr ? input->samplesSinceAppStart : 0ULL; }
+    int channel() const { return input != nullptr ? static_cast<int>(input->channel) : 0; }
+    int sampleInBlock() const { return input != nullptr ? input->sampleInBlock : 0; }
+    int blockSize() const { return input != nullptr ? input->blockSize : 0; }
+    int inputChannelCount() const { return input != nullptr ? input->inputChannelCount : 0; }
+    int sideChainChannelCount() const { return input != nullptr ? input->sideChainChannelCount : 0; }
+    int channelCount() const { return input != nullptr ? input->channelCount : 0; }
+    float sampleRate() const { return input != nullptr ? input->sampleRate : 0.0f; }
+    uint64_t samplesSinceAppStart() const { return input != nullptr ? input->samplesSinceAppStart : 0ULL; }
     bool isSustainDown() const { return input != nullptr && input->sustain; }
 
-    float getIncomingSample(int channel = -1, int sample = -1) const {
-        const int resolvedChannel = channel >= 0 ? channel : getChannel();
-        const int resolvedSample = sample >= 0 ? sample : getSampleInBlock();
+    float incomingSample(int channel = -1, int sample = -1) const {
+        const int resolvedChannel = channel >= 0 ? channel : this->channel();
+        const int resolvedSample = sample >= 0 ? sample : sampleInBlock();
         if (input == nullptr
             || input->inputDeviceSamples == nullptr
             || !isValidIndex(resolvedChannel, input->inputChannelCount)
@@ -1481,8 +1690,8 @@ public:
         return input->inputDeviceSamples[resolvedChannel][resolvedSample];
     }
 
-    float getSideChainSample(int channel = 0, int sample = -1) const {
-        const int resolvedSample = sample >= 0 ? sample : getSampleInBlock();
+    float sideChainSample(int channel = 0, int sample = -1) const {
+        const int resolvedSample = sample >= 0 ? sample : sampleInBlock();
         if (input == nullptr
             || input->inputSideChainSamples == nullptr
             || !isValidIndex(channel, input->sideChainChannelCount)
@@ -1494,9 +1703,9 @@ public:
         return input->inputSideChainSamples[channel][resolvedSample];
     }
 
-    float getCurrentSample(int channel = -1, int sample = -1) const {
-        const int resolvedChannel = channel >= 0 ? channel : getChannel();
-        const int resolvedSample = sample >= 0 ? sample : getSampleInBlock();
+    float currentSample(int channel = -1, int sample = -1) const {
+        const int resolvedChannel = channel >= 0 ? channel : this->channel();
+        const int resolvedSample = sample >= 0 ? sample : sampleInBlock();
         if (input == nullptr
             || input->currentSampleData == nullptr
             || !isValidIndex(resolvedChannel, input->channelCount)
@@ -1508,9 +1717,9 @@ public:
         return input->currentSampleData[resolvedChannel][resolvedSample];
     }
 
-    void setCurrentSample(float value, int channel = -1, int sample = -1) const {
-        const int resolvedChannel = channel >= 0 ? channel : getChannel();
-        const int resolvedSample = sample >= 0 ? sample : getSampleInBlock();
+    void setCurrentSample(float value, int channel = -1, int sample = -1) {
+        const int resolvedChannel = channel >= 0 ? channel : this->channel();
+        const int resolvedSample = sample >= 0 ? sample : sampleInBlock();
         if (input == nullptr
             || input->currentSampleData == nullptr
             || !isValidIndex(resolvedChannel, input->channelCount)
@@ -1520,20 +1729,6 @@ public:
         }
 
         input->currentSampleData[resolvedChannel][resolvedSample] = value;
-    }
-
-    bool isMidiNoteOn(int note) const {
-        return input != nullptr
-            && input->midiNoteOn != nullptr
-            && isValidIndex(note, 128)
-            && input->midiNoteOn[note] != 0;
-    }
-
-    uint8_t getMidiCCValue(int controller) const {
-        if (input == nullptr || input->midiCCValue == nullptr || !isValidIndex(controller, 128))
-            return 0;
-
-        return input->midiCCValue[controller];
     }
 
 private:
@@ -1547,20 +1742,25 @@ class WaviateFrequency final : public WaviateCore {
 public:
     WaviateFrequency(const WaviateFrequencyInput* inputIn, WaviateFrequencyStateWriter* writerIn)
         : WaviateCore(inputIn != nullptr ? inputIn->sampleRate : 0.0f,
-              inputIn != nullptr ? inputIn->samplesSinceAppStart : 0ULL),
+              inputIn != nullptr ? inputIn->samplesSinceAppStart : 0ULL,
+              inputIn != nullptr ? inputIn->midiNoteOn : nullptr, inputIn != nullptr ? inputIn->midiCCValue : nullptr,
+              inputIn != nullptr ? inputIn->sampleWhenMidiNoteOn : nullptr, inputIn != nullptr ? inputIn->sampleWhenMidiNoteOff : nullptr,
+              inputIn != nullptr ? inputIn->midiNotePressOrder : nullptr, inputIn != nullptr ? inputIn->midiNotePressCount : 0,
+              inputIn != nullptr ? inputIn->midiNoteReleaseOrder : nullptr, inputIn != nullptr ? inputIn->midiNoteReleaseCount : 0,
+              inputIn != nullptr ? inputIn->midiVoiceOrder : nullptr, inputIn != nullptr ? inputIn->midiVoiceCount : 0),
           input(inputIn), writer(writerIn) {}
 
-    int getChannel() const { return input != nullptr ? static_cast<int>(input->channel) : 0; }
-    int getBin() const { return input != nullptr ? input->bin : 0; }
-    int getTotalBinCount() const { return input != nullptr ? input->totalBinCount : 0; }
-    int getSampleWidth() const { return input != nullptr ? input->sampleWidth : 0; }
-    int getChannelCount() const { return input != nullptr ? input->channelCount : 0; }
-    float getSampleRate() const { return input != nullptr ? input->sampleRate : 0.0f; }
-    uint64_t getSamplesSinceAppStart() const { return input != nullptr ? input->samplesSinceAppStart : 0ULL; }
+    int channel() const { return input != nullptr ? static_cast<int>(input->channel) : 0; }
+    int bin() const { return input != nullptr ? input->bin : 0; }
+    int totalBinCount() const { return input != nullptr ? input->totalBinCount : 0; }
+    int sampleWidth() const { return input != nullptr ? input->sampleWidth : 0; }
+    int channelCount() const { return input != nullptr ? input->channelCount : 0; }
+    float sampleRate() const { return input != nullptr ? input->sampleRate : 0.0f; }
+    uint64_t samplesSinceAppStart() const { return input != nullptr ? input->samplesSinceAppStart : 0ULL; }
 
-    WaviateComplex getIncomingSample(int channel = -1, int bin = -1) const {
-        const int resolvedChannel = channel >= 0 ? channel : getChannel();
-        const int resolvedBin = bin >= 0 ? bin : getBin();
+    WaviateComplex incomingSample(int channel = -1, int bin = -1) const {
+        const int resolvedChannel = channel >= 0 ? channel : this->channel();
+        const int resolvedBin = bin >= 0 ? bin : this->bin();
         if (input == nullptr
             || input->inputDeviceData == nullptr
             || !isValidIndex(resolvedChannel, input->channelCount)
@@ -1572,9 +1772,9 @@ public:
         return input->inputDeviceData[resolvedChannel][resolvedBin];
     }
 
-    WaviateComplex getCurrentSample(int channel = -1, int bin = -1) const {
-        const int resolvedChannel = channel >= 0 ? channel : getChannel();
-        const int resolvedBin = bin >= 0 ? bin : getBin();
+    WaviateComplex currentSample(int channel = -1, int bin = -1) const {
+        const int resolvedChannel = channel >= 0 ? channel : this->channel();
+        const int resolvedBin = bin >= 0 ? bin : this->bin();
         if (input == nullptr
             || input->currentFrequencyData == nullptr
             || !isValidIndex(resolvedChannel, input->channelCount)
@@ -1586,8 +1786,8 @@ public:
         return input->currentFrequencyData[resolvedChannel][resolvedBin];
     }
 
-    WaviateComplex getSideChainSample(int channel = 0, int bin = -1) const {
-        const int resolvedBin = bin >= 0 ? bin : getBin();
+    WaviateComplex sideChainSample(int channel = 0, int bin = -1) const {
+        const int resolvedBin = bin >= 0 ? bin : this->bin();
         if (input == nullptr
             || input->inputSideChainFrequencyData == nullptr
             || !isValidIndex(channel, input->channelCount)

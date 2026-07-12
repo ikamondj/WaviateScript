@@ -138,8 +138,8 @@ SampleExecutionResult executeSample(const CompileResult& result, const SampleInv
 
     auto midiNoteOn = invocation.midiNoteOn;
     auto midiCcValue = invocation.midiCcValue;
-    std::array<juce::uint64, 128> sampleWhenMidiNoteOn {};
-    std::array<juce::uint64, 128> sampleWhenMidiNoteOff {};
+    auto sampleWhenMidiNoteOn = invocation.sampleWhenMidiNoteOn;
+    auto sampleWhenMidiNoteOff = invocation.sampleWhenMidiNoteOff;
     std::array<juce::uint64, 128> sampleWhenCcValueChanged {};
     std::array<bool, 128> sustainDeferred {};
 
@@ -157,6 +157,12 @@ SampleExecutionResult executeSample(const CompileResult& result, const SampleInv
     input.sampleWhenMidiNoteOn = sampleWhenMidiNoteOn.data();
     input.sampleWhenMidiNoteOff = sampleWhenMidiNoteOff.data();
     input.sampleWhenCCValueChanged = sampleWhenCcValueChanged.data();
+    input.midiNotePressOrder = invocation.midiNotePressOrder.data();
+    input.midiNoteReleaseOrder = invocation.midiNoteReleaseOrder.data();
+    input.midiVoiceOrder = invocation.midiVoiceOrder.data();
+    input.midiNotePressCount = invocation.midiNotePressCount;
+    input.midiNoteReleaseCount = invocation.midiNoteReleaseCount;
+    input.midiVoiceCount = invocation.midiVoiceCount;
     input.sustain = invocation.sustain;
     input.sustainDefer = sustainDeferred.data();
     input.controllerCount = 0;

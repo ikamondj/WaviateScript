@@ -214,6 +214,9 @@ WaviateScriptAudioProcessor::WaviateScriptAudioProcessor()
     wavInput->sampleWhenMidiNoteOn = sampleWhenMidiNoteOnState.data();
     wavInput->sampleWhenMidiNoteOff = sampleWhenMidiNoteOffState.data();
     wavInput->sampleWhenCCValueChanged = sampleWhenCCValueChangedState.data();
+    wavInput->midiNotePressOrder = midiNotePressOrderState.data();
+    wavInput->midiNoteReleaseOrder = midiNoteReleaseOrderState.data();
+    wavInput->midiVoiceOrder = midiVoiceOrderState.data();
     wavInput->sustainDefer = sustainDeferredNoteOff.data();
     wavInput->sampleRate = static_cast<float>(currentSampleRate);
 
@@ -373,6 +376,9 @@ void WaviateScriptAudioProcessor::prepareToPlay (double sampleRate, int samplesP
     std::fill(sampleWhenMidiNoteOffState.begin(), sampleWhenMidiNoteOffState.end(), uint64_t { 0 });
     std::fill(sampleWhenCCValueChangedState.begin(), sampleWhenCCValueChangedState.end(), uint64_t { 0 });
     std::fill(sustainDeferredNoteOff.begin(), sustainDeferredNoteOff.end(), false);
+    midiNotePressCount = 0;
+    midiNoteReleaseCount = 0;
+    midiVoiceCount = 0;
 
     wavInput->sampleRate = static_cast<float>(currentSampleRate);
 
@@ -424,6 +430,26 @@ static inline void clearAllNotes(uint8_t* midiNote, std::span<bool, midiStateCou
     std::fill(deferred.begin(), deferred.end(), false);
 }
 
+static inline void moveMidiNoteToFront(uint8_t note,
+                                       std::span<uint8_t, midiStateCount> order,
+                                       int32_t& count) noexcept
+{
+    const size_t validCount = static_cast<size_t>(std::clamp<int32_t>(count, 0, static_cast<int32_t>(midiStateCount)));
+    size_t previousIndex = validCount;
+    for (size_t index = 0; index < validCount; ++index)
+        if (order[index] == note)
+        {
+            previousIndex = index;
+            break;
+        }
+
+    if (previousIndex == validCount && validCount < midiStateCount)
+        count = static_cast<int32_t>(validCount + 1);
+    for (size_t index = std::min(previousIndex, midiStateCount - 1); index > 0; --index)
+        order[index] = order[index - 1];
+    order[0] = note;
+}
+
 static inline void applyMidiToState(const juce::MidiMessage& m,
                                    uint8_t* midiNote,
                                    uint8_t* midiCC,
@@ -432,6 +458,12 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
                                    uint64_t* sampleWhenCCValueChanged,
                                    bool& sustainDown,
                                    std::span<bool, midiStateCount> sustainDeferredNoteOff,
+                                   std::span<uint8_t, midiStateCount> notePressOrder,
+                                   std::span<uint8_t, midiStateCount> noteReleaseOrder,
+                                   std::span<uint8_t, midiStateCount> voiceOrder,
+                                   int32_t& notePressCount,
+                                   int32_t& noteReleaseCount,
+                                   int32_t& voiceCount,
                                    uint64_t sampleTime)
 {
     if (m.isNoteOn())
@@ -444,6 +476,8 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
             if (sampleWhenMidiNoteOn != nullptr)
                 sampleWhenMidiNoteOn[note] = sampleTime;
             sustainDeferredNoteOff[note] = false;
+            moveMidiNoteToFront(static_cast<uint8_t>(note), notePressOrder, notePressCount);
+            moveMidiNoteToFront(static_cast<uint8_t>(note), voiceOrder, voiceCount);
         }
         return;
     }
@@ -467,6 +501,7 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
                     midiNote[note] = 0;
                 sustainDeferredNoteOff[note] = false;
             }
+            moveMidiNoteToFront(static_cast<uint8_t>(note), noteReleaseOrder, noteReleaseCount);
         }
         return;
     }
@@ -476,6 +511,13 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
 
     if (m.isAllNotesOff() || m.isAllSoundOff())
     {
+        for (size_t note = 0; note < midiStateCount; ++note)
+            if (midiNote != nullptr && midiNote[note] != 0)
+            {
+                if (sampleWhenMidiNoteOff != nullptr)
+                    sampleWhenMidiNoteOff[note] = sampleTime;
+                moveMidiNoteToFront(static_cast<uint8_t>(note), noteReleaseOrder, noteReleaseCount);
+            }
         clearAllNotes(midiNote, sustainDeferredNoteOff);
         return;
     }
@@ -518,6 +560,13 @@ static inline void applyMidiToState(const juce::MidiMessage& m,
         // Common "All Notes Off" is also sometimes sent as CC 123
         if (cc == 123 || cc == 120)
         {
+            for (size_t note = 0; note < midiStateCount; ++note)
+                if (midiNote != nullptr && midiNote[note] != 0)
+                {
+                    if (sampleWhenMidiNoteOff != nullptr)
+                        sampleWhenMidiNoteOff[note] = sampleTime;
+                    moveMidiNoteToFront(static_cast<uint8_t>(note), noteReleaseOrder, noteReleaseCount);
+                }
             clearAllNotes(midiNote, sustainDeferredNoteOff);
         }
 

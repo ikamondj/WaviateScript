@@ -10,7 +10,7 @@ Studio exporter are no longer required for normal local or CI builds.
 - A C++20-capable compiler
 - JUCE 8.0.12
 - LLVM/Clang development packages with CMake config files
-- FFTW headers and libraries
+- FFTW headers and libraries only when explicitly building with `WAVIATESCRIPT_REQUIRE_FFTW`
 - Windows installer builds: WiX CLI (`wix`)
 - macOS installer builds: Xcode command line tools for `pkgbuild` and `productbuild`
 

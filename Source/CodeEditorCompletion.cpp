@@ -558,14 +558,20 @@ std::vector<CompletionItem> CompletionProvider::getMemberCompletionsForType(cons
         });
     }
 
-    if (type == "WaviateSampleInput")
-        appendCompletions(result, waviate::language::waviateSampleInputFields(), makeFieldCompletion);
-
-    if (type == "WaviateFrequencyInput")
-        appendCompletions(result, waviate::language::waviateFrequencyInputFields(), makeFieldCompletion);
-
     if (type == "WaviateComplex")
-        appendCompletions(result, waviate::language::waviateComplexFields(), makeFieldCompletion);
+        appendCompletions(result, waviate::language::waviateComplexMemberFunctions(), [](const FunctionSymbol& symbol) {
+            return makeFunctionCompletion(symbol, true);
+        });
+
+    if (type == "WaviateCore::MidiVoice" || type == "MidiVoice")
+        appendCompletions(result, waviate::language::waviateMidiVoiceMemberFunctions(), [](const FunctionSymbol& symbol) {
+            return makeFunctionCompletion(symbol, true);
+        });
+
+    if (type == "WaviateCore::MidiVoices" || type == "MidiVoices")
+        appendCompletions(result, waviate::language::waviateMidiVoicesMemberFunctions(), [](const FunctionSymbol& symbol) {
+            return makeFunctionCompletion(symbol, true);
+        });
 
     return sortByRelevance(result, {});
 }

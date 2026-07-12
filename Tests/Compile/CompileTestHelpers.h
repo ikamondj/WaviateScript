@@ -27,6 +27,14 @@ struct SampleInvocation
     waviate::audio::WaviateAudioCache* audioCache = nullptr;
     std::array<uint8_t, 128> midiNoteOn {};
     std::array<uint8_t, 128> midiCcValue {};
+    std::array<juce::uint64, 128> sampleWhenMidiNoteOn {};
+    std::array<juce::uint64, 128> sampleWhenMidiNoteOff {};
+    std::array<uint8_t, 128> midiNotePressOrder {};
+    std::array<uint8_t, 128> midiNoteReleaseOrder {};
+    std::array<uint8_t, 128> midiVoiceOrder {};
+    int midiNotePressCount = 0;
+    int midiNoteReleaseCount = 0;
+    int midiVoiceCount = 0;
     std::vector<std::vector<float>> inputChannels;
     std::vector<std::vector<float>> outputChannels;
     std::vector<std::vector<float>> sideChainChannels;

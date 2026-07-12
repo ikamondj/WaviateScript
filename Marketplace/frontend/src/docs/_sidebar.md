@@ -1,3 +1,4 @@
 - [Home](home.md)
 - [Guide](guide.md)
 - [Rules](rules.md)
+- [C++ Shader API](input_api_cpp.md)

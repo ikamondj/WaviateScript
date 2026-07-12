@@ -55,6 +55,9 @@ inline void WaviateScriptAudioProcessor::setupCommonBlockData(AudioBlockContext&
     wavInput->currentSampleData = context.mainOut.getArrayOfWritePointers();
     wavInput->inputChannelCount = context.inputChannels;
     wavInput->channelCount = context.outputChannels;
+    wavInput->midiNotePressCount = midiNotePressCount;
+    wavInput->midiNoteReleaseCount = midiNoteReleaseCount;
+    wavInput->midiVoiceCount = midiVoiceCount;
 }
 
 inline void WaviateScriptAudioProcessor::setupNonPremiumCommonBlockData(AudioBlockContext&) noexcept {}
@@ -123,11 +126,8 @@ inline bool WaviateScriptAudioProcessor::processSamples(AudioBlockContext& conte
             midiBlockMessages[static_cast<size_t>(metadata.samplePosition)].push_back(metadata.getMessage());
 
     const auto shader = activeSampleShader.load(std::memory_order_acquire);
-    if (shader == nullptr)
-        return true;
-
     const auto runtime = loadRuntimeControls();
-    if (runtime.hasFuelMetering())
+    if (shader != nullptr && runtime.hasFuelMetering())
         runtime.beginBlock(waviate::compile::calculateFuelBudget(getFuelLimitPreset(), context.sampleCount, context.outputChannels));
 
     for (int sample = 0; sample < context.sampleCount; ++sample)
@@ -138,13 +138,20 @@ inline bool WaviateScriptAudioProcessor::processSamples(AudioBlockContext& conte
             applyMidiToState(message, wavInput->midiNoteOn, wavInput->midiCCValue,
                              wavInput->sampleWhenMidiNoteOn, wavInput->sampleWhenMidiNoteOff,
                              wavInput->sampleWhenCCValueChanged, sustainDown,
-                             std::span<bool, midiStateCount>(wavInput->sustainDefer, midiStateCount), absoluteSample);
+                             std::span<bool, midiStateCount>(wavInput->sustainDefer, midiStateCount),
+                             std::span<uint8_t, midiStateCount>(midiNotePressOrderState),
+                             std::span<uint8_t, midiStateCount>(midiNoteReleaseOrderState),
+                             std::span<uint8_t, midiStateCount>(midiVoiceOrderState),
+                             midiNotePressCount, midiNoteReleaseCount, midiVoiceCount, absoluteSample);
 
         wavInput->sampleInBlock = sample;
         wavInput->samplesSinceAppStart = absoluteSample;
         wavInput->sustain = sustainDown;
+        wavInput->midiNotePressCount = midiNotePressCount;
+        wavInput->midiNoteReleaseCount = midiNoteReleaseCount;
+        wavInput->midiVoiceCount = midiVoiceCount;
 
-        for (int channel = 0; channel < context.outputChannels; ++channel)
+        for (int channel = 0; shader != nullptr && channel < context.outputChannels; ++channel)
         {
             wavInput->channel = static_cast<uint8_t>(channel);
             waviate::safety::ScopedArenaPass arenaPass(shaderArena);
@@ -168,6 +175,18 @@ inline void WaviateScriptAudioProcessor::setupCommonFrequencyBlockData(AudioBloc
     workspace.input.channelCount = context.outputChannels;
     workspace.input.sampleRate = static_cast<float>(currentSampleRate);
     workspace.input.samplesSinceAppStart = samplesSinceAppStart;
+    workspace.input.midiNoteOn = wavInput->midiNoteOn;
+    workspace.input.midiCCValue = wavInput->midiCCValue;
+    workspace.input.sampleWhenMidiNoteOn = wavInput->sampleWhenMidiNoteOn;
+    workspace.input.sampleWhenMidiNoteOff = wavInput->sampleWhenMidiNoteOff;
+    workspace.input.sampleWhenCCValueChanged = wavInput->sampleWhenCCValueChanged;
+    workspace.input.midiNotePressOrder = wavInput->midiNotePressOrder;
+    workspace.input.midiNoteReleaseOrder = wavInput->midiNoteReleaseOrder;
+    workspace.input.midiVoiceOrder = wavInput->midiVoiceOrder;
+    workspace.input.midiNotePressCount = midiNotePressCount;
+    workspace.input.midiNoteReleaseCount = midiNoteReleaseCount;
+    workspace.input.midiVoiceCount = midiVoiceCount;
+    workspace.input.sustain = sustainDown;
 }
 inline void WaviateScriptAudioProcessor::setupStandaloneFrequencyBlockData(AudioBlockContext&) noexcept {}
 #ifdef WAV_SCRIPT_PREMIUM
@@ -251,8 +270,8 @@ inline bool WaviateScriptAudioProcessor::processFrequencyBins(AudioBlockContext&
             for (int bin = 0; bin < binCount; ++bin)
             {
                 const auto value = workspace.outputSpectrum[static_cast<size_t>(channel)][static_cast<size_t>(bin)];
-                outputData[static_cast<size_t>(2 * bin)] = value.real;
-                outputData[static_cast<size_t>(2 * bin + 1)] = value.imag;
+                outputData[static_cast<size_t>(2 * bin)] = value.real();
+                outputData[static_cast<size_t>(2 * bin + 1)] = value.imaginary();
             }
             fft.performRealOnlyInverseTransform(outputData.data());
             for (int sample = 0; sample < frameSamples; ++sample)

@@ -12,15 +12,15 @@
 
 std::string CppFileTemplateGenerator::getDefaultFileSource() const
 {
-    return R"(float SampleProcess(const WaviateSample& wav) {
+    return R"(float SampleProcess(WaviateSample& wav) {
     return 0.0f;
 }
 
 /* Uncomment FrequencyProcess below to enable frequency domain processing */
-// WaviateComplex FrequencyProcess(const WaviateFrequency& wav) {
-//     int channel = wav.getChannel();
-//     int bin = wav.getBin();
-//     return wav.getIncomingSample(channel, bin);
+// WaviateComplex FrequencyProcess(WaviateFrequency& wav) {
+//     int channel = wav.channel();
+//     int bin = wav.bin();
+//     return wav.incomingSample(channel, bin);
 // }
 )";
 }

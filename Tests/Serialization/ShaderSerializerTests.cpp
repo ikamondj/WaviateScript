@@ -5,7 +5,7 @@
 WAVIATE_TEST_CASE(ShaderSerializerSmokeTest, "Shader Serializer Smoke", "Serialization")
 {
     WAVIATE_TEST("serialize and deserialize without mutating the source");
-    const juce::String source = "float SampleProcess(const WaviateSample& wav) { return wav.getIncomingSample(); }\n";
+    const juce::String source = "float SampleProcess(const WaviateSample& wav) { return wav.incomingSample(); }\n";
     WaviateShaderSerializer::Options options;
     options.minifySource = false;
     options.compressPayload = false;

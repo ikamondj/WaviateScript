@@ -163,6 +163,12 @@ private:
     std::array<uint64_t, 128> sampleWhenMidiNoteOnState{};
     std::array<uint64_t, 128> sampleWhenMidiNoteOffState{};
     std::array<uint64_t, 128> sampleWhenCCValueChangedState{};
+    std::array<uint8_t, 128> midiNotePressOrderState{};
+    std::array<uint8_t, 128> midiNoteReleaseOrderState{};
+    std::array<uint8_t, 128> midiVoiceOrderState{};
+    int32_t midiNotePressCount = 0;
+    int32_t midiNoteReleaseCount = 0;
+    int32_t midiVoiceCount = 0;
     std::array<bool, 128> sustainDeferredNoteOff{};
     bool sustainDown = false;
     double currentSampleRate = 44100.0;

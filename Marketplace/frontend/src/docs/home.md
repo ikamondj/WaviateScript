@@ -7,12 +7,14 @@ The system is intended for situations where traditional DAW workflows are too ri
 Waviate Script exists to reduce the amount of boilerplate required to connect custom audio logic to real-time audio systems. Rather than forcing each host or language to expose its own bespoke DSP interface, Waviate Script defines a common execution and data interface that can be implemented consistently across multiple systems languages.
 
 ### Programming Details
-The project is designed around a shared ABI-level contract. Audio shaders are authored in languages such as C, C++, or Rust and compiled into binaries that conform to this contract. The runtime is responsible for wiring those binaries into the surrounding audio environment, handling buffer exchange, parameter binding, and host integration. For standard users this integrates audio inputs, sidechain, midi and keyboard inputs. For premium users, we also include common inter-process communication and network protocols, integration with DAW features, support for HID devices and more. 
+The current user-facing shader language is C++. Shaders receive a private `wav` context façade with `const` accessors for audio, timing, MIDI, application, sidechain, and frequency data. Explicit non-const `set...` functions are reserved for frame-local mutation on the audio thread. The runtime retains a C-compatible ABI internally to support future language frontends, but C is not currently a first-class authoring interface. Rust is not supported or under active development and remains a stretch goal.
+
+The runtime wires compiled shaders into the surrounding audio environment, handling buffer exchange and host integration. Standard users receive application, audio, MIDI, and musical context. Premium builds add DAW integration, HID/controller input, OSC, and other integration features as they become available.
 
 ### Shader Language Information
 The core guiding principle of waviate script is to write shader-like code to process and output audio signals. If you aren't familiar with the graphics world, shader code is a common function interface that acts, say, per pixel or per geometric point. The arguments to the function carry data about the context of the function call (like enough information to know which pixel you're operating on) and the system automatically renders graphics at each pixel based on your function's output. Think of it as a function mapping your pixel coordinate to a color. 
 
-Similarly, waviate flow acts on audio samples and frequency bins. You can define a function and it will have a context input describing a large amount of context: "what audio sample am I on? How long has the app been running in seconds? Is a certain midi note currently being pressed?" are just a few examples. Waviate flow then processes your logic and plays back in real-time or records in an offline rendering mode. These functions can process per sample, per frequency bin, or both.
+Similarly, WaviateScript acts on audio samples and frequency bins. You define `SampleProcess`, `FrequencyProcess`, or both. The `wav` argument answers questions such as “which sample am I processing?”, “how long has the app been running?”, and “is this MIDI note held?” without exposing raw engine storage.
 
 ### Note about shader domains
 -Per-sample functions are sample-accurate and local.
