@@ -25,7 +25,7 @@ import (
 type Components struct {
 	Store          persistence.Store
 	Service        *service.Service
-	AuthManager    *auth.Manager
+	AuthManager    auth.AuthManager
 	AuthMiddleware auth.Middleware
 }
 
@@ -113,13 +113,18 @@ func NewComponents(cfg config.Config) (Components, error) {
 		return Components{}, errors.New("marketplace store was not initialized")
 	}
 
-	authManager := auth.NewManager(store, auth.Config{
-		BaseURL:            cfg.AuthBaseURL,
-		Secret:             cfg.AuthSecret,
-		GoogleClientID:     cfg.GoogleClientID,
-		GoogleClientSecret: cfg.GoogleClientSecret,
-		SessionTTL:         cfg.SessionTTL,
-	})
+	var authManager auth.AuthManager
+	if cfg.Mode == "server" || cfg.Mode == "serverless" {
+		authManager = auth.NewManager(store, auth.Config{
+			BaseURL:            cfg.AuthBaseURL,
+			Secret:             cfg.AuthSecret,
+			GoogleClientID:     cfg.GoogleClientID,
+			GoogleClientSecret: cfg.GoogleClientSecret,
+			SessionTTL:         cfg.SessionTTL,
+		})
+	} else {
+		authManager = auth.NewLocalManager(store)
+	}
 	marketplaceService := service.NewService(store)
 	authMiddleware := auth.NewMiddleware(authManager)
 

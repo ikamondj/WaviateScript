@@ -210,7 +210,7 @@ public:
     float midiNotePhase(int note) const { return midiNotePhaseForFrequency(note, midiNoteFrequency(note)); }
     template <typename Tuning>
     float midiNotePhase(int note, const Tuning& tuning) const { return midiNotePhaseForFrequency(note, midiNoteFrequency(note, tuning)); }
-    float midiNoteAdsr(int note, float attackSeconds, float decaySeconds, float sustainLevel, float releaseSeconds) const {
+    float adsr(int note, float attackSeconds, float decaySeconds, float sustainLevel, float releaseSeconds) const {
         if (!hasOrderedMidiNote(coreMidiNotePressOrder, coreMidiNotePressCount, note))
             return 0.0f;
         const auto attackSamples = secondsToSamples(attackSeconds);
@@ -241,7 +241,7 @@ public:
         template <typename Tuning> float frequency(const Tuning& tuning) const { return owner != nullptr ? owner->midiNoteFrequency(midiNote, tuning) : 0.0f; }
         template <typename Tuning> float phase(const Tuning& tuning) const { return owner != nullptr ? owner->midiNotePhase(midiNote, tuning) : 0.0f; }
         float adsr(float attackSeconds, float decaySeconds, float sustainLevel, float releaseSeconds) const {
-            return owner != nullptr ? owner->midiNoteAdsr(midiNote, attackSeconds, decaySeconds, sustainLevel, releaseSeconds) : 0.0f;
+            return owner != nullptr ? owner->adsr(midiNote, attackSeconds, decaySeconds, sustainLevel, releaseSeconds) : 0.0f;
         }
     private:
         friend class MidiVoices;
@@ -276,26 +276,6 @@ public:
     MidiVoices midiVoices(int maximumVoices = 128) const {
         return MidiVoices(this, waviate_detail::clampInt(maximumVoices, 0, coreMidiVoiceCount));
     }
-
-    float adsr(float attack, float decay, float sustain, float release, float t) const {
-        const float a = waviate_detail::maxValue(0.0f, attack);
-        const float d = waviate_detail::maxValue(0.0f, decay);
-        const float s = waviate_detail::clamp01(sustain);
-        const float r = waviate_detail::maxValue(0.0f, release);
-
-        if (t < 0.0f)
-            return r > 0.0f ? s * (1.0f - waviate_detail::clamp01(-t / r)) : 0.0f;
-        if (a > 0.0f && t < a)
-            return waviate_detail::clamp01(t / a);
-        if (d > 0.0f && t < a + d)
-            return waviate_detail::lerp(1.0f, s, (t - a) / d);
-
-        return s;
-    }
-    float ADSR(float attack, float decay, float sustain, float release, float t) const {
-        return adsr(attack, decay, sustain, release, t);
-    }
-
     float sine(float x) const { return ::sine(x); }
     float saw(float x) const { return ::saw(x); }
     float square(float x) const { return ::square(x); }

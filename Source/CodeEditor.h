@@ -39,7 +39,8 @@ class WaviateScriptAudioProcessor;
  */
 class CodeEditor : public juce::Component,
                    private juce::KeyListener,
-                   private juce::CodeDocument::Listener
+                   private juce::CodeDocument::Listener,
+                   private juce::Timer
 {
 public:
     explicit CodeEditor(WaviateScriptAudioProcessor* processor = nullptr);
@@ -116,6 +117,11 @@ private:
     void codeDocumentTextInserted(const juce::String& newText, int insertIndex) override;
     void codeDocumentTextDeleted(int startIndex, int endIndex) override;
 
+    // Mouse and Hover
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+    void timerCallback() override;
+
     // UI Layout helpers
     void layoutEditorArea();
     void layoutStatusBar();
@@ -154,14 +160,32 @@ private:
         }
     };
 
+    class HoverPopup : public juce::Component
+    {
+    public:
+        HoverPopup();
+        void show(const CompletionItem& item, juce::Point<int> screenPos);
+        void hidePopup();
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+        void setTheme(const WaviateTheme& theme);
+    private:
+        juce::String title;
+        juce::String documentation;
+        WaviateTheme activeTheme;
+    };
+
     // ===== Editor Components =====
     juce::CodeDocument document;
     juce::CPlusPlusCodeTokeniser tokeniser;
     std::unique_ptr<juce::CodeEditorComponent> editor;
 
-    // ===== Autocomplete =====
+    // ===== Autocomplete & Hover =====
     std::unique_ptr<CompletionProvider> completionProvider;
     std::unique_ptr<CompletionPopupMenu> completionMenu;
+    std::unique_ptr<HoverPopup> hoverPopup;
+    juce::Point<int> lastHoverMousePos;
+    int lastHoverCharIndex = -1;
 
     // ===== Bottom Status Bar =====
     juce::Component statusBar;

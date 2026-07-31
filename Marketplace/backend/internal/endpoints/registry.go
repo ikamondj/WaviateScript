@@ -16,6 +16,7 @@ const (
 	DesktopOpen        = "desktop-open"
 	AdminClear         = "admin-clear"
 	AdminSeed          = "admin-seed"
+	LocalAuthForm      = "local-auth-form"
 )
 
 type AuthPolicy struct {
@@ -49,6 +50,7 @@ func Registry() []Endpoint {
 		{Name: DesktopOpen, Method: http.MethodGet, Path: "/api/desktop/open", CloudFunctionName: "desktop-open", Serverless: true},
 		{Name: AdminClear, Method: http.MethodPost, Path: "/api/admin/clear", LocalAdminOnly: true},
 		{Name: AdminSeed, Method: http.MethodPost, Path: "/api/admin/seed", LocalAdminOnly: true},
+		{Name: LocalAuthForm, Method: http.MethodGet, Path: "/api/auth/local/login", LocalAdminOnly: true},
 	}
 }
 

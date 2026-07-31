@@ -19,10 +19,10 @@ import (
 type Router struct {
 	service     *service.Service
 	auth        auth.Middleware
-	authManager *auth.Manager
+	authManager auth.AuthManager
 }
 
-func NewRouter(service *service.Service, authMiddleware auth.Middleware, authManager *auth.Manager, adminEnabled bool) http.Handler {
+func NewRouter(service *service.Service, authMiddleware auth.Middleware, authManager auth.AuthManager, adminEnabled bool) http.Handler {
 	router := Router{
 		service:     service,
 		auth:        authMiddleware,
@@ -32,7 +32,7 @@ func NewRouter(service *service.Service, authMiddleware auth.Middleware, authMan
 	return router.build(endpoints.ServerEndpoints(adminEnabled))
 }
 
-func NewEndpointRouter(service *service.Service, authMiddleware auth.Middleware, authManager *auth.Manager, endpoint endpoints.Endpoint) http.Handler {
+func NewEndpointRouter(service *service.Service, authMiddleware auth.Middleware, authManager auth.AuthManager, endpoint endpoints.Endpoint) http.Handler {
 	router := Router{
 		service:     service,
 		auth:        authMiddleware,
@@ -85,6 +85,8 @@ func (router Router) handler(endpoint endpoints.Endpoint) (http.Handler, bool) {
 		handler = http.HandlerFunc(router.adminClear)
 	case endpoints.AdminSeed:
 		handler = http.HandlerFunc(router.adminSeed)
+	case endpoints.LocalAuthForm:
+		handler = http.HandlerFunc(router.localAuthForm)
 	default:
 		return nil, false
 	}
@@ -279,6 +281,37 @@ func (router Router) adminSeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (router Router) localAuthForm(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+
+	client := r.URL.Query().Get("client")
+	html := `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Local Login</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #070812; color: #edf7ff; padding: 2rem; }
+    form { display: flex; flex-direction: column; gap: 1rem; max-width: 300px; }
+    input, button { padding: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h2>Local Login</h2>
+  <form action="/api/auth/google/callback" method="GET">
+    <input type="hidden" name="state" value="` + client + `">
+    <label>Username (admin, premium, regular):</label>
+    <input type="text" name="code" value="premium">
+    <label>Password:</label>
+    <input type="password" name="password" value="premium">
+    <button type="submit">Login</button>
+  </form>
+</body>
+</html>`
+	_, _ = w.Write([]byte(html))
 }
 
 func readInt(raw string, fallback int) int {

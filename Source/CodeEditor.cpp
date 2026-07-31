@@ -166,6 +166,10 @@ void CodeEditor::ensureEditorCreated()
     };
     addAndMakeVisible(*completionMenu);
     
+    hoverPopup = std::make_unique<HoverPopup>();
+    hoverPopup->setTheme(activeTheme);
+    editor->addMouseListener(this, true); // so CodeEditor receives mouseMove
+    
     applyTheme();
     layoutEditorArea();
 }
@@ -279,6 +283,77 @@ int CodeEditor::getVisualizerHeight(int availableHeight) const
                       availableHeight);
 }
 
+//==============================================================================
+CodeEditor::HoverPopup::HoverPopup() : activeTheme(WaviateThemes::fallback())
+{
+    setAlwaysOnTop(true);
+    setOpaque(true);
+    setInterceptsMouseClicks(false, false);
+}
+
+void CodeEditor::HoverPopup::show(const CompletionItem& item, juce::Point<int> screenPos)
+{
+    title = item.displayText;
+    documentation = item.documentation;
+    
+    if (title.isEmpty()) return;
+
+    juce::Font titleFont(14.0f, juce::Font::bold);
+    juce::Font docFont(13.0f, juce::Font::plain);
+    
+    int maxWidth = 400;
+    int titleWidth = titleFont.getStringWidth(title);
+    
+    int width = juce::jmin(maxWidth, juce::jmax(titleWidth + 20, 200));
+    int height = 30;
+    
+    if (documentation.isNotEmpty())
+    {
+        juce::AttributedString attrString;
+        attrString.append(documentation, docFont);
+        juce::TextLayout layout;
+        layout.createLayoutWithBalancedLineLengths(attrString, static_cast<float>(width - 20));
+        height += static_cast<int>(layout.getHeight()) + 10;
+    }
+
+    setBounds(screenPos.x, screenPos.y + 20, width, height);
+    addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowIgnoresMouseClicks);
+    setVisible(true);
+    repaint();
+}
+
+void CodeEditor::HoverPopup::hidePopup()
+{
+    setVisible(false);
+    removeFromDesktop();
+}
+
+void CodeEditor::HoverPopup::paint(juce::Graphics& g)
+{
+    g.fillAll(activeTheme.panelBackground);
+    g.setColour(activeTheme.outline);
+    g.drawRect(getLocalBounds());
+
+    g.setColour(activeTheme.text);
+    juce::Font titleFont(14.0f, juce::Font::bold);
+    g.setFont(titleFont);
+    
+    auto area = getLocalBounds().reduced(10);
+    g.drawText(title, area.removeFromTop(20), juce::Justification::topLeft, true);
+    
+    if (documentation.isNotEmpty())
+    {
+        area.removeFromTop(5);
+        juce::Font docFont(13.0f, juce::Font::plain);
+        g.setFont(docFont);
+        g.drawMultiLineText(documentation, area.getX(), area.getY(), area.getWidth());
+    }
+}
+
+void CodeEditor::HoverPopup::resized() {}
+void CodeEditor::HoverPopup::setTheme(const WaviateTheme& theme) { activeTheme = theme; }
+
+//==============================================================================
 void CodeEditor::setTheme(const WaviateTheme& theme)
 {
     activeTheme = theme;
@@ -330,6 +405,9 @@ void CodeEditor::applyTheme()
         editor->setColourScheme(WaviateThemes::createCodeColourScheme(activeTheme));
         editor->repaint();
     }
+
+    if (hoverPopup != nullptr)
+        hoverPopup->setTheme(activeTheme);
 
     if (visualizer != nullptr)
         visualizer->setColours(activeTheme.visualizerBackground, activeTheme.visualizerWaveform);
@@ -470,6 +548,72 @@ void CodeEditor::codeDocumentTextDeleted(int, int)
     // Hide completions if they're open
     if (completionMenu != nullptr && completionMenu->isOpen())
         completionMenu->hideCompletions();
+}
+
+void CodeEditor::mouseMove(const juce::MouseEvent& e)
+{
+    if (editor == nullptr || !areCompletionsEnabledFlag) return;
+
+    auto localEvent = e.getEventRelativeTo(editor.get());
+    auto pos = editor->getPositionAt(localEvent.x, localEvent.y);
+    int charIndex = pos.getPosition();
+
+    // Reset timer if moved to new character or moved sufficiently
+    if (lastHoverCharIndex != charIndex || lastHoverMousePos.getDistanceFrom(e.getScreenPosition()) > 5)
+    {
+        lastHoverCharIndex = charIndex;
+        lastHoverMousePos = e.getScreenPosition();
+        
+        if (hoverPopup != nullptr)
+            hoverPopup->hidePopup();
+        
+        if (charIndex >= 0)
+            startTimer(500);
+        else
+            stopTimer();
+    }
+}
+
+void CodeEditor::mouseExit(const juce::MouseEvent&)
+{
+    stopTimer();
+    if (hoverPopup != nullptr) 
+        hoverPopup->hidePopup();
+}
+
+void CodeEditor::timerCallback()
+{
+    stopTimer();
+    
+    if (editor == nullptr || completionProvider == nullptr || lastHoverCharIndex < 0 || hoverPopup == nullptr)
+        return;
+
+    const auto sourceCode = getText();
+    int end = lastHoverCharIndex;
+    
+    // Find the end of the identifier the mouse is currently over
+    while (end < sourceCode.length() && (juce::CharacterFunctions::isLetterOrDigit(sourceCode[end]) || sourceCode[end] == '_'))
+        end++;
+        
+    // Extract context to find prefix (the word we're hovering)
+    juce::String owner;
+    juce::String prefix = completionProvider->extractCompletionContext(sourceCode, end, owner);
+    
+    if (prefix.isEmpty())
+        return;
+
+    // Get completions for the location
+    auto completions = completionProvider->getCompletions(sourceCode, end);
+    
+    // Filter to find the exact match
+    for (const auto& c : completions)
+    {
+        if (c.name == prefix)
+        {
+            hoverPopup->show(c, lastHoverMousePos);
+            break;
+        }
+    }
 }
 
 //==============================================================================
